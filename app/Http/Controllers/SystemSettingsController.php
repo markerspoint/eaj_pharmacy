@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class SystemSettingsController extends Controller
 {
@@ -287,25 +288,47 @@ class SystemSettingsController extends Controller
     public function uploadLogo(Request $request): RedirectResponse
     {
         $request->validate([
-            'logo' => ['required', 'image', 'mimes:jpeg,png,jpg,gif,webp,svg', 'max:2048'],
+            'logo' => ['required', 'file', 'mimes:jpeg,png,jpg,gif,webp,svg', 'max:4096'],
         ]);
 
         $user     = auth()->user();
         $branchId = $request->integer('branch_id') ?: null;
 
-        if (! $user->isSuperAdmin() && $branchId !== $user->branch_id) {
+        if (! $user->isSuperAdmin() && ! $user->isAdministrator() && $branchId !== $user->branch_id) {
             abort(403);
         }
 
-        $old = SystemSetting::get('general.logo', $branchId);
+        $old = (string) SystemSetting::get('general.logo', $branchId, '');
         if ($old && Storage::disk('public')->exists($old)) {
             Storage::disk('public')->delete($old);
         }
 
+        Storage::disk('public')->makeDirectory('logos');
         $path = $request->file('logo')->store('logos', 'public');
         SystemSetting::set('general.logo', $path, $branchId);
 
         return back()->with('message', ['type' => 'success', 'text' => 'Logo uploaded.']);
+    }
+
+    public function logoFile(Request $request, ?int $branchId = null): BinaryFileResponse
+    {
+        $path = (string) SystemSetting::get('general.logo', $branchId, '');
+        $path = ltrim(str_replace('\\', '/', $path), '/');
+
+        abort_if($path === '' || ! str_starts_with($path, 'logos/'), 404);
+
+        $publicDisk = Storage::disk('public');
+        $fullPath = $publicDisk->path($path);
+
+        if (! is_file($fullPath)) {
+            $legacyPath = storage_path('app/public/' . $path);
+            abort_unless(is_file($legacyPath), 404);
+            $fullPath = $legacyPath;
+        }
+
+        return response()->file($fullPath, [
+            'Cache-Control' => 'public, max-age=86400',
+        ]);
     }
 
     // ── Helper: read which menus are enabled ──────────────────────────────────

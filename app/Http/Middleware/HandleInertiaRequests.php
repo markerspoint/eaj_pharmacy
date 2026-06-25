@@ -64,6 +64,8 @@ class HandleInertiaRequests extends Middleware
                 ->all();
         }
 
+        $globalLogoPath = (string) SystemSetting::get('general.logo', null, '');
+
         return array_merge(parent::share($request), [
 
             // ── App meta ──────────────────────────────────────────
@@ -73,9 +75,7 @@ class HandleInertiaRequests extends Middleware
                 'currency'       => SystemSetting::currencySymbol(),
                 'ai_chat_enabled'=> (bool) SystemSetting::get('general.ai_chat_enabled', null, true),
                 'color_theme'    => (string) SystemSetting::get('general.color_theme', null, 'ea'),
-                'logo_url'       => SystemSetting::get('general.logo', null, '')
-                                        ? asset('storage/' . SystemSetting::get('general.logo', null, ''))
-                                        : null,
+                'logo_url'       => $globalLogoPath !== '' ? route('brand.logo') : null,
             ],
 
             // ── Auth ──────────────────────────────────────────────

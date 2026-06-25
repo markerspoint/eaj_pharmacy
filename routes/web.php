@@ -35,6 +35,10 @@ use App\Http\Controllers\StockCountController;
 use App\Http\Controllers\BrochureController;
 
 // PUBLIC
+Route::get('/brand-logo/{branchId?}', [SystemSettingsController::class, 'logoFile'])
+    ->whereNumber('branchId')
+    ->name('brand.logo');
+
 Route::middleware('guest')->group(function () {
     Route::get('/', fn() => Inertia::render('Login'))->name('login');
     Route::post('/login', [LoginAuthController::class, 'postLogin'])->name('login.post');

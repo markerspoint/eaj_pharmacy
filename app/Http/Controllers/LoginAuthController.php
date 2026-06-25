@@ -20,7 +20,7 @@ class LoginAuthController extends Controller
     {
         $logoPath = \App\Models\SystemSetting::get('general.logo', null, '');
         return Inertia::render('Login', [
-            'logo_url' => $logoPath ? asset('storage/' . $logoPath) : null,
+            'logo_url' => $logoPath ? route('brand.logo') : null,
         ]);
     }
 

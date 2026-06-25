@@ -113,8 +113,10 @@ function LogoUpload({ currentValue, branchId }: { currentValue: string; branchId
     const fileRef = useRef<HTMLInputElement>(null);
     const [uploading, setUploading] = useState(false);
     const [preview, setPreview] = useState<string | null>(null);
+    const [cacheBust, setCacheBust] = useState(Date.now());
 
-    const logoUrl = preview ?? (currentValue ? `/storage/${currentValue}` : null);
+    const logoRoute = branchId ? route('brand.logo', { branchId }) : route('brand.logo');
+    const logoUrl = preview ?? (currentValue ? `${logoRoute}?v=${cacheBust}` : null);
 
     const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -128,6 +130,10 @@ function LogoUpload({ currentValue, branchId }: { currentValue: string; branchId
         router.post(routes.settings.logo(), data, {
             forceFormData: true,
             preserveScroll: true,
+            onSuccess: () => {
+                setPreview(null);
+                setCacheBust(Date.now());
+            },
             onFinish: () => setUploading(false),
         });
         // Reset so same file can be re-selected
