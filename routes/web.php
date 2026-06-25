@@ -1,6 +1,5 @@
 <?php
 
-use Inertia\Inertia;
 use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\LoginAuthController;
@@ -40,7 +39,7 @@ Route::get('/brand-logo/{branchId?}', [SystemSettingsController::class, 'logoFil
     ->name('brand.logo');
 
 Route::middleware('guest')->group(function () {
-    Route::get('/', fn() => Inertia::render('Login'))->name('login');
+    Route::get('/', [LoginAuthController::class, 'getLogin'])->name('login');
     Route::post('/login', [LoginAuthController::class, 'postLogin'])->name('login.post');
 });
 

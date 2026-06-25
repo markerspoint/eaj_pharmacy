@@ -327,7 +327,7 @@ class SystemSettingsController extends Controller
         }
 
         return response()->file($fullPath, [
-            'Cache-Control' => 'public, max-age=86400',
+            'Cache-Control' => 'no-cache, must-revalidate',
         ]);
     }
 

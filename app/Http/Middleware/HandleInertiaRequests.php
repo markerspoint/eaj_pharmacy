@@ -64,7 +64,11 @@ class HandleInertiaRequests extends Middleware
                 ->all();
         }
 
-        $globalLogoPath = (string) SystemSetting::get('general.logo', null, '');
+        $globalLogo = SystemSetting::whereNull('branch_id')
+            ->where('key', 'general.logo')
+            ->first(['value', 'updated_at']);
+        $globalLogoPath = (string) ($globalLogo?->value ?? '');
+        $globalLogoVersion = $globalLogo?->updated_at?->timestamp;
 
         return array_merge(parent::share($request), [
 
@@ -75,7 +79,9 @@ class HandleInertiaRequests extends Middleware
                 'currency'       => SystemSetting::currencySymbol(),
                 'ai_chat_enabled'=> (bool) SystemSetting::get('general.ai_chat_enabled', null, true),
                 'color_theme'    => (string) SystemSetting::get('general.color_theme', null, 'ea'),
-                'logo_url'       => $globalLogoPath !== '' ? route('brand.logo') : null,
+                'logo_url'       => $globalLogoPath !== ''
+                    ? route('brand.logo', $globalLogoVersion ? ['v' => $globalLogoVersion] : [])
+                    : null,
             ],
 
             // ── Auth ──────────────────────────────────────────────

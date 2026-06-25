@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
@@ -18,9 +19,14 @@ class LoginAuthController extends Controller
 
     public function getLogin(): Response
     {
-        $logoPath = \App\Models\SystemSetting::get('general.logo', null, '');
+        $logo = SystemSetting::whereNull('branch_id')
+            ->where('key', 'general.logo')
+            ->first(['value', 'updated_at']);
+        $logoPath = (string) ($logo?->value ?? '');
+        $logoVersion = $logo?->updated_at?->timestamp;
+
         return Inertia::render('Login', [
-            'logo_url' => $logoPath ? route('brand.logo') : null,
+            'logo_url' => $logoPath ? route('brand.logo', $logoVersion ? ['v' => $logoVersion] : []) : null,
         ]);
     }
 
