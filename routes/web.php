@@ -38,6 +38,10 @@ Route::get('/brand-logo/{branchId?}', [SystemSettingsController::class, 'logoFil
     ->whereNumber('branchId')
     ->name('brand.logo');
 
+Route::get('/brand-icon/{branchId?}', [SystemSettingsController::class, 'iconFile'])
+    ->whereNumber('branchId')
+    ->name('brand.icon');
+
 Route::middleware('guest')->group(function () {
     Route::get('/', [LoginAuthController::class, 'getLogin'])->name('login');
     Route::post('/login', [LoginAuthController::class, 'postLogin'])->name('login.post');
@@ -63,6 +67,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/', 'store')->name('store');
         Route::post('/queue', 'queueOrder')->name('queue');
         Route::get('/queued-orders/{token}', 'queuedOrder')->name('queued-orders.show');
+        Route::delete('/queued-orders/{order}', 'cancelQueuedOrder')->name('queued-orders.cancel');
         Route::get('/{sale}/edit', 'edit')->name('edit');
         Route::put('/{sale}', 'update')->name('update');
         Route::post('/{sale}/void', 'void')->name('void');
@@ -227,6 +232,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/modules', 'saveModules')->name('modules');
         Route::delete('/{key}/reset', 'reset')->name('reset');
         Route::post('/logo', 'uploadLogo')->name('logo');
+        Route::post('/icon', 'uploadIcon')->name('icon');
     });
 
     // Stock Adjustments (Losses / Damages / Expired)

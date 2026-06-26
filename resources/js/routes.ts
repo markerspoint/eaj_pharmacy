@@ -23,6 +23,7 @@ export const routes = {
         modules: ()            => route('settings.modules'),
         reset:   (key: string) => route('settings.reset', { key }),
         logo:    ()            => route('settings.logo'),
+        icon:    ()            => route('settings.icon'),
     },
 
     // ── POS / Cashier — ID 2 ──────────────────────────────────────────────────

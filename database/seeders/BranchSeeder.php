@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\Branch;
-use App\Models\Supplier;
 use Illuminate\Database\Seeder;
 
 class BranchSeeder extends Seeder
@@ -20,16 +19,11 @@ class BranchSeeder extends Seeder
      */
     public function run(): void
     {
-        $coop = Supplier::where('name', 'COOP')->first();
-        $abc  = Supplier::where('name', 'ABC Trading')->first();
-        $xyz  = Supplier::where('name', 'XYZ Wholesale')->first();
-
         $branches = [
 
             // ── COOP Main Campus — cafe WITH dine-in tables ────────
             // Overrides: use_table_ordering=true (cafe defaults to false)
             [
-                'supplier_id'        => $coop?->id,
                 'name'               => 'COOP Main Campus',
                 'code'               => 'CMC',
                 'address'            => 'Main Building, Ground Floor',
@@ -43,7 +37,6 @@ class BranchSeeder extends Seeder
             // ── COOP Annex — cafe, takeout/kiosk only ─────────────
             // Auto-flags: use_variants=true, use_recipe_system=true
             [
-                'supplier_id'   => $coop?->id,
                 'name'          => 'COOP Annex',
                 'code'          => 'CAN',
                 'address'       => 'Annex Building, Room 101',
@@ -56,7 +49,6 @@ class BranchSeeder extends Seeder
             // ── ABC Main Store — retail / grocery ─────────────────
             // Auto-flags: use_variants=true, use_expiry_tracking=true, use_bundles=true
             [
-                'supplier_id'   => $abc?->id,
                 'name'          => 'ABC Main Store',
                 'code'          => 'ABC1',
                 'address'       => '123 Commerce St., City Center',
@@ -70,7 +62,6 @@ class BranchSeeder extends Seeder
             // Overrides: use_variants=false, use_expiry_tracking=false
             // (hardware doesn't need sizes or expiry dates)
             [
-                'supplier_id'         => $xyz?->id,
                 'name'                => 'XYZ Warehouse',
                 'code'                => 'XYZ1',
                 'address'             => '456 Trade Ave., Uptown',
@@ -84,7 +75,6 @@ class BranchSeeder extends Seeder
         ];
 
         foreach ($branches as $data) {
-            if (!$data['supplier_id']) continue;
             Branch::firstOrCreate(['code' => $data['code']], $data);
         }
 

@@ -17,6 +17,7 @@ class User extends Authenticatable
         'username',
         'password',
         'role',
+        'cashier_type',
         'branch_id',
         'access',
         'pos_layout',
@@ -29,6 +30,7 @@ class User extends Authenticatable
 
     protected $casts = [
         'role'       => 'string',
+        'cashier_type' => 'string',
         'access'     => 'array',
         'pos_layout' => 'string',
         'password'   => 'hashed',
@@ -36,6 +38,7 @@ class User extends Authenticatable
 
     protected $attributes = [
         'role'       => 'cashier',
+        'cashier_type' => 'counter_cashier',
         'pos_layout' => 'grid',
     ];
 
@@ -45,6 +48,9 @@ class User extends Authenticatable
     const ROLE_ADMINISTRATOR = 'administrator';
     const ROLE_MANAGER       = 'manager';
     const ROLE_CASHIER       = 'cashier';
+
+    const CASHIER_TYPE_ORDER_TAKER      = 'order_taker';
+    const CASHIER_TYPE_COUNTER_CASHIER  = 'counter_cashier';
 
     public static function roles(): array
     {
@@ -56,6 +62,14 @@ class User extends Authenticatable
         ];
     }
 
+    public static function cashierTypes(): array
+    {
+        return [
+            self::CASHIER_TYPE_ORDER_TAKER     => 'Order Taker',
+            self::CASHIER_TYPE_COUNTER_CASHIER => 'Counter Cashier',
+        ];
+    }
+
     // ── POS Layout constants ───────────────────────────────────────
 
     /**
@@ -64,27 +78,21 @@ class User extends Authenticatable
      * Used for validation in UserController.
      */
     const POS_LAYOUTS = [
-        'grid',
+        'mobile',
         'tablet',
-        'grocery',
-        'cafe',
-        'restaurant',
-        'salon',
-        'kiosk',
-        'mobile',     // Android phone cashier — compact vertical layout
+        'grid',
+        'fast_cashier',
+        'order_only',
     ];
 
     public static function posLayoutLabels(): array
     {
         return [
-            'grid'       => 'PC / Standard',
-            'tablet'     => 'Tablet / Touch',
-            'grocery'    => 'Grocery / Fast',
-            'cafe'       => 'Cafe / Quick',
-            'restaurant' => 'Restaurant / Table',
-            'salon'      => 'Salon / Service',
-            'kiosk'      => 'Kiosk / Self-serve',
-            'mobile'     => 'Mobile / Android Phone',
+            'mobile'     => 'Phone',
+            'tablet'     => 'Tablet',
+            'grid'       => 'Standard',
+            'fast_cashier' => 'Fast Cashier',
+            'order_only' => 'Cashier - Take Orders Only',
         ];
     }
 
@@ -94,6 +102,17 @@ class User extends Authenticatable
     public function isAdministrator(): bool{ return $this->role === self::ROLE_ADMINISTRATOR; }
     public function isManager(): bool      { return $this->role === self::ROLE_MANAGER; }
     public function isCashier(): bool      { return $this->role === self::ROLE_CASHIER; }
+    public function isOrderTaker(): bool   { return $this->isCashier() && $this->cashier_type === self::CASHIER_TYPE_ORDER_TAKER; }
+    public function isCounterCashier(): bool { return $this->isCashier() && ($this->cashier_type ?? self::CASHIER_TYPE_COUNTER_CASHIER) === self::CASHIER_TYPE_COUNTER_CASHIER; }
+
+    public function canCollectPosPayments(): bool
+    {
+        if (! $this->isCashier()) {
+            return $this->hasElevatedAccess();
+        }
+
+        return $this->isCounterCashier();
+    }
 
     /** Super Admin OR Administrator */
     public function isAdmin(): bool
@@ -130,6 +149,11 @@ class User extends Authenticatable
     public function getRoleLabelAttribute(): string
     {
         return self::roles()[$this->role] ?? ucfirst($this->role);
+    }
+
+    public function getCashierTypeLabelAttribute(): string
+    {
+        return self::cashierTypes()[$this->cashier_type ?? self::CASHIER_TYPE_COUNTER_CASHIER] ?? 'Counter Cashier';
     }
 
     // ── Menu Access ────────────────────────────────────────────────
@@ -187,6 +211,16 @@ class User extends Authenticatable
     public function sales()
     {
         return $this->hasMany(Sale::class);
+    }
+
+    public function createdSales()
+    {
+        return $this->hasMany(Sale::class, 'order_created_by');
+    }
+
+    public function paymentsReceived()
+    {
+        return $this->hasMany(Sale::class, 'payment_received_by');
     }
 
     public function cashSessions()

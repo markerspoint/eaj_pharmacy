@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class Supplier extends Model
 {
@@ -25,11 +24,6 @@ class Supplier extends Model
 
     // ── Relationships ──────────────────────────────────────────────
 
-    public function branches(): HasMany
-    {
-        return $this->hasMany(Branch::class);
-    }
-
     /** Orders placed WITH this supplier (as the selling party) */
     public function orders(): HasMany
     {
@@ -40,24 +34,6 @@ class Supplier extends Model
     public function goodsReceivedNotes(): HasMany
     {
         return $this->hasMany(GoodsReceivedNote::class);
-    }
-
-    /** All users across all branches */
-    public function users(): HasManyThrough
-    {
-        return $this->hasManyThrough(User::class, Branch::class);
-    }
-
-    /** All product stocks across all branches */
-    public function stocks(): HasManyThrough
-    {
-        return $this->hasManyThrough(ProductStock::class, Branch::class);
-    }
-
-    /** All sales across all branches */
-    public function sales(): HasManyThrough
-    {
-        return $this->hasManyThrough(Sale::class, Branch::class);
     }
 
     // ── Helpers ────────────────────────────────────────────────────
@@ -71,13 +47,4 @@ class Supplier extends Model
 
     // ── Accessors ──────────────────────────────────────────────────
 
-    public function getTotalStockAttribute(): int
-    {
-        return (int) $this->stocks()->sum('stock');
-    }
-
-    public function getActiveBranchCountAttribute(): int
-    {
-        return $this->branches()->where('is_active', true)->count();
-    }
 }

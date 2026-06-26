@@ -11,6 +11,7 @@ use App\Models\RecipeIngredient;
 use App\Models\ProductBundle;
 use App\Models\ProductBundleItem;
 use App\Models\ActivityLog;
+use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
@@ -38,6 +39,10 @@ class ProductController extends Controller
         $status      = $request->string('status', '')->toString();
         $perPage     = $request->integer('per_page', 24);
         $perPage     = in_array($perPage, [12, 24, 48, 96]) ? $perPage : 24;
+
+        $productModuleSettings = [
+            '10' => SystemSetting::get('modules.menu_10', null, 'true') !== 'false',
+        ];
 
         // Branch filter: admins default to first branch; non-admins are locked to theirs
         $branchFilter = $isAdmin
@@ -276,7 +281,7 @@ class ProductController extends Controller
             ])->values();
 
         // Recipes
-        $recipeProducts = Product::query()
+        $recipeProducts = $productModuleSettings['10'] ? Product::query()
             ->with(['category:id,name', 'recipeIngredients.ingredient:id,name'])
             ->where('product_type', 'made_to_order')
             ->orderBy('name')
@@ -295,7 +300,7 @@ class ProductController extends Controller
                     'notes'              => $l->notes,
                     'formatted_quantity' => $l->formatted_quantity,
                 ])->values(),
-            ])->values();
+            ])->values() : collect();
 
         // Stock management — paginated flat list of product × stock rows
         $stockPerPage  = $request->integer('stock_per_page', 25);
@@ -445,6 +450,7 @@ class ProductController extends Controller
             'branches'            => Branch::orderBy('name')->get(['id', 'name', 'code']),
             'allProductsForSelect'=> $allProductsForSelect,
             'isAdmin'             => $isAdmin,
+            'productModuleSettings'=> $productModuleSettings,
             'userRole'            => $user->role,
             'userBranchId'        => $branchId,
         ]);

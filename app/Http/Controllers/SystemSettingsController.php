@@ -287,8 +287,18 @@ class SystemSettingsController extends Controller
 
     public function uploadLogo(Request $request): RedirectResponse
     {
+        return $this->uploadBrandImage($request, 'logo', 'general.logo', 'logos', 'Logo uploaded.');
+    }
+
+    public function uploadIcon(Request $request): RedirectResponse
+    {
+        return $this->uploadBrandImage($request, 'icon', 'general.app_icon', 'icons', 'Tab icon uploaded.');
+    }
+
+    private function uploadBrandImage(Request $request, string $field, string $key, string $directory, string $message): RedirectResponse
+    {
         $request->validate([
-            'logo' => ['required', 'file', 'mimes:jpeg,png,jpg,gif,webp,svg', 'max:4096'],
+            $field => ['required', 'file', 'mimes:jpeg,png,jpg,gif,webp,svg,ico', 'max:4096'],
         ]);
 
         $user     = auth()->user();
@@ -298,24 +308,45 @@ class SystemSettingsController extends Controller
             abort(403);
         }
 
-        $old = (string) SystemSetting::get('general.logo', $branchId, '');
-        if ($old && Storage::disk('public')->exists($old)) {
+        $old = ltrim(str_replace('\\', '/', (string) SystemSetting::get($key, $branchId, '')), '/');
+        if ($old && str_starts_with($old, $directory . '/') && Storage::disk('public')->exists($old)) {
             Storage::disk('public')->delete($old);
         }
 
-        Storage::disk('public')->makeDirectory('logos');
-        $path = $request->file('logo')->store('logos', 'public');
-        SystemSetting::set('general.logo', $path, $branchId);
+        Storage::disk('public')->makeDirectory($directory);
+        $path = $request->file($field)->store($directory, 'public');
+        SystemSetting::updateOrCreate(
+            ['key' => $key, 'branch_id' => $branchId],
+            [
+                'value' => $path,
+                'type' => 'image',
+                'group' => 'general',
+                'label' => $field === 'icon' ? 'Tab icon' : 'Business logo',
+                'description' => $field === 'icon' ? 'Browser tab and app shortcut icon' : 'Business logo used across the system',
+                'updated_at' => now(),
+            ]
+        );
+        SystemSetting::flushCache($branchId);
 
-        return back()->with('message', ['type' => 'success', 'text' => 'Logo uploaded.']);
+        return back()->with('message', ['type' => 'success', 'text' => $message]);
     }
 
     public function logoFile(Request $request, ?int $branchId = null): BinaryFileResponse
     {
-        $path = (string) SystemSetting::get('general.logo', $branchId, '');
+        return $this->brandImageFile('general.logo', 'logos', $branchId);
+    }
+
+    public function iconFile(Request $request, ?int $branchId = null): BinaryFileResponse
+    {
+        return $this->brandImageFile('general.app_icon', 'icons', $branchId);
+    }
+
+    private function brandImageFile(string $key, string $directory, ?int $branchId = null): BinaryFileResponse
+    {
+        $path = (string) SystemSetting::get($key, $branchId, '');
         $path = ltrim(str_replace('\\', '/', $path), '/');
 
-        abort_if($path === '' || ! str_starts_with($path, 'logos/'), 404);
+        abort_if($path === '' || ! str_starts_with($path, $directory . '/'), 404);
 
         $publicDisk = Storage::disk('public');
         $fullPath = $publicDisk->path($path);
@@ -327,7 +358,9 @@ class SystemSettingsController extends Controller
         }
 
         return response()->file($fullPath, [
-            'Cache-Control' => 'no-cache, must-revalidate',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
         ]);
     }
 

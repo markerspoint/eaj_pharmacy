@@ -20,6 +20,7 @@ class PosQueuedOrder extends Model
         'subtotal',
         'total',
         'status',
+        'payment_status',
         'processed_at',
         'expires_at',
     ];
@@ -61,6 +62,16 @@ class PosQueuedOrder extends Model
 
     public function isPending(): bool
     {
-        return $this->status === 'pending' && (! $this->expires_at || $this->expires_at->isFuture());
+        return $this->status === 'pending'
+            && ($this->payment_status ?? 'pending_payment') === 'pending_payment'
+            && (! $this->expires_at || $this->expires_at->isFuture());
+    }
+
+    public function scopePendingPayment($query)
+    {
+        return $query
+            ->where('status', 'pending')
+            ->where('payment_status', 'pending_payment')
+            ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()));
     }
 }

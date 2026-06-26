@@ -15,7 +15,7 @@ class SupplierController extends Controller
     public function index(Request $request): Response
     {
         $suppliers = Supplier::query()
-            ->withCount(['orders', 'branches'])
+            ->withCount('orders')
             ->get();                            
 
         return Inertia::render('Suppliers/Index', [
@@ -84,7 +84,7 @@ class SupplierController extends Controller
     {
         $orders = Order::with([
                 'items' => fn($q) => $q->with(['product:id,name', 'variant:id,name']),
-                'branch.supplier:id,name,phone,address,contact_person',
+                'branch:id,name,code,phone,address,contact_person',
             ])
             ->where('supplier_id', $supplier->id)
             ->latest()
@@ -99,11 +99,11 @@ class SupplierController extends Controller
                 'total'          => $order->total,
                 'created_at'     => $order->created_at->format('M d, Y h:i A'),
                 'can_manage'     => $order->status === 'pending',
-                'buyer_supplier' => $order->branch?->supplier ? [
-                    'name'           => $order->branch->supplier->name,
-                    'phone'          => $order->branch->supplier->phone,
-                    'address'        => $order->branch->supplier->address,
-                    'contact_person' => $order->branch->supplier->contact_person,
+                'buyer_supplier' => $order->branch ? [
+                    'name'           => $order->branch->name,
+                    'phone'          => $order->branch->phone,
+                    'address'        => $order->branch->address,
+                    'contact_person' => $order->branch->contact_person,
                 ] : null,
                 'items' => $order->items->map(fn($item) => [
                     'name'     => $item->display_name,

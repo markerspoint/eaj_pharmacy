@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Head, usePage, router, Link } from "@inertiajs/react";
 import AdminLayout from "@/layouts/AdminLayout";
 import { routes } from "@/routes";
@@ -83,7 +83,7 @@ const overShortCls = (status: string) => ({
 // ─── Open Session Modal ───────────────────────────────────────────────────────
 
 function OpenSessionModal({ currency, onClose }: { currency: string; onClose: () => void }) {
-    const [amount,  setAmount]  = useState("");
+    const [amount,  setAmount]  = useState(() => localStorage.getItem("pos:lastOpeningCash") ?? "0");
     const [notes,   setNotes]   = useState("");
     const [loading, setLoading] = useState(false);
     const [error,   setError]   = useState("");
@@ -92,12 +92,17 @@ function OpenSessionModal({ currency, onClose }: { currency: string; onClose: ()
     const append   = (v: string) => setAmount(p => (p === "0" || p === "") ? v : p + v);
     const bksp     = ()          => setAmount(p => p.slice(0, -1) || "");
 
+    useEffect(() => {
+        const previous = localStorage.getItem("pos:lastOpeningCash");
+        if (previous !== null) setAmount(previous);
+    }, []);
+
     const handleOpen = () => {
         if (val < 0) { setError("Enter a valid amount."); return; }
         setLoading(true); setError("");
         router.post(routes.cashSessions.open(), { opening_cash: val, notes: notes || null }, {
             preserveScroll: true,
-            onSuccess: () => { setLoading(false); onClose(); },
+            onSuccess: () => { localStorage.setItem("pos:lastOpeningCash", String(val)); setLoading(false); onClose(); },
             onError: e  => { setError(Object.values(e)[0] as string ?? "Failed."); setLoading(false); },
         });
     };
@@ -128,19 +133,19 @@ function OpenSessionModal({ currency, onClose }: { currency: string; onClose: ()
 
                     {/* Quick amounts */}
                     <div className="grid grid-cols-4 gap-1.5">
-                        {[500, 1000, 2000, 5000].map(v => (
+                        {[0, 500, 1000, 2000].map(v => (
                             <button key={v} onClick={() => setAmount(String(v))}
                                 className={cn("py-2 rounded-xl border text-xs font-bold transition-all",
                                     val === v ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/40 hover:bg-accent")}>
-                                {currency}{v.toLocaleString()}
+                                {v === 0 ? "Zero" : `${currency}${v.toLocaleString()}`}
                             </button>
                         ))}
                     </div>
 
                     {/* Numpad */}
                     <div className="grid grid-cols-3 gap-2">
-                        {["7","8","9","4","5","6","1","2","3","00","0","⌫"].map(k => (
-                            <button key={k} onClick={() => k === "⌫" ? bksp() : append(k)}
+                        {["7","8","9","4","5","6","1","2","3","00","0","Back"].map(k => (
+                            <button key={k} onClick={() => k === "Back" ? bksp() : append(k)}
                                 className="h-12 rounded-xl border border-border text-base font-semibold hover:bg-accent hover:border-primary/30 active:scale-95 transition-all">
                                 {k}
                             </button>

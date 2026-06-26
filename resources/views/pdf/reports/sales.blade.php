@@ -73,7 +73,8 @@
         <tr>
             <th>Receipt #</th>
             <th>Date</th>
-            <th>Cashier</th>
+            <th>Created By</th>
+            <th>Payment By</th>
             <th>Customer</th>
             <th class="amount">Total</th>
             <th class="amount">Discount</th>
@@ -83,7 +84,8 @@
         <tr>
             <td>{{ $sale->receipt_number }}</td>
             <td>{{ \Carbon\Carbon::parse($sale->created_at)->format('M d, Y h:i A') }}</td>
-            <td>{{ $sale->user->full_name ?? '—' }}</td>
+            <td>{{ $sale->orderCreator->full_name ?? $sale->user->full_name ?? '—' }}</td>
+            <td>{{ $sale->paymentReceiver->full_name ?? $sale->user->full_name ?? '—' }}</td>
             <td>{{ $sale->customer_name ?? 'Walk-in' }}</td>
             <td class="amount">₱{{ number_format($sale->total, 2) }}</td>
             <td class="amount">{{ $sale->discount_amount > 0 ? '-₱' . number_format($sale->discount_amount, 2) : '—' }}</td>
@@ -92,7 +94,7 @@
         @endforeach
 
         <tr class="total-row">
-            <td colspan="4" style="text-align: right;">TOTAL SALES</td>
+            <td colspan="5" style="text-align: right;">TOTAL SALES</td>
             <td class="amount" style="font-size: 15px;">₱{{ number_format($total_sales ?? 0, 2) }}</td>
             <td colspan="2"></td>
         </tr>

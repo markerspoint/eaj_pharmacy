@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Branch extends Model
@@ -157,7 +156,6 @@ class Branch extends Model
     }
 
     protected $fillable = [
-        'supplier_id',
         'name',
         'code',
         'address',
@@ -272,7 +270,6 @@ class Branch extends Model
 
     // ── Relationships ──────────────────────────────────────────────
 
-    public function supplier(): BelongsTo         { return $this->belongsTo(Supplier::class); }
     public function users(): HasMany              { return $this->hasMany(User::class); }
     public function productStocks(): HasMany      { return $this->hasMany(ProductStock::class); }
     public function sales(): HasMany              { return $this->hasMany(Sale::class); }

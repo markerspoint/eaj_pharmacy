@@ -58,7 +58,6 @@ interface Supplier {
   contact_person?: string;
   phone?: string;
   address?: string;
-  branches_count?: number;
   orders_count?: number;
 }
 
@@ -229,11 +228,6 @@ export default function SupplierIndex() {
             </div>
           ) : "—";
         },
-      },
-      {
-        accessorKey: "branches_count",
-        header: "Branches",
-        size: 100,
       },
       {
         accessorKey: "orders_count",

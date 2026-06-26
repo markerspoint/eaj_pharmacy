@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { Link, Head, router, usePage } from "@inertiajs/react";
 
 import {
@@ -243,6 +243,16 @@ function SubLink({
 export default function AdminLayout({ children }: AdminLayoutProps) {
     const { props } = usePage<any>();
     const { theme, setTheme } = useTheme();
+    const logoUrl = props.app?.logo_url ?? "/uploads/ease-logo.png";
+    const iconUrl = props.app?.icon_url ?? "/uploads/ease-icon.png";
+    const logoKey = `${logoUrl}|${props.app?.logo_version ?? ""}`;
+    const currentPath = usePage().url.split("?")[0].replace(/\/$/, "") || "/";
+    const isPosRoute = currentPath === "/pos" || currentPath.startsWith("/pos/");
+    const [sidebarOpen, setSidebarOpen] = useState(!isPosRoute);
+
+    useEffect(() => {
+        setSidebarOpen(!isPosRoute);
+    }, [isPosRoute]);
 
     // tablet / restaurant / grocery / cafe / salon → bottom static nav (no sidebar)
     // mobile → keep sidebar as normal
@@ -252,8 +262,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     if (BOTTOM_NAV_LAYOUTS.includes(posLayout)) {
         return <CashierLayout>{children}</CashierLayout>;
     }
-
-    const currentPath = usePage().url.split("?")[0].replace(/\/$/, "");
 
     const isActive = (path: string): boolean => {
         const p = path.replace(/\/$/, "");
@@ -284,14 +292,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const managementActive = ["/users", "/suppliers", "/branches", "/dining-tables", "/settings"].some(isActive);
 
     return (
-        <SidebarProvider defaultOpen>
+        <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
             <div className="flex min-h-screen w-full bg-background text-foreground">
 
                 {/* ── SIDEBAR ─────────────────────────────────────────── */}
                 <Sidebar collapsible="icon" className="border-r border-border">
                     <Head>
                         <title>{props.title ?? "POS"}</title>
-                        <link rel="icon" href="/favicon.ico" />
+                        <link rel="icon" href={iconUrl} type="image/png" />
                     </Head>
 
                     {/* Header / Logo */}
@@ -300,13 +308,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                             <SidebarMenuItem>
                                 <SidebarMenuButton size="lg" asChild>
                                     <Link href={has(MENU.DASHBOARD) ? routes.dashboard() : routes.pos.index()}>
-                                        <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                                            <span className="font-bold text-sm">P</span>
+                                        <div className="flex h-9 w-16 shrink-0 items-center justify-center rounded-md bg-white p-1 ring-1 ring-border group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:p-0.5">
+                                            <img key={logoKey} src={logoUrl} alt="Logo" className="max-h-full max-w-full object-contain" />
                                         </div>
                                         <div className="grid flex-1 text-left text-sm leading-tight">
                                             <span className="truncate font-semibold">POS System</span>
                                             <span className="truncate text-xs text-muted-foreground">
-                                                {props.auth?.user?.supplier?.name ?? "—"}
+                                                {props.auth?.user?.branch?.name ?? "POS"}
                                             </span>
                                         </div>
                                     </Link>

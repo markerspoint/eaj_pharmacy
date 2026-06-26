@@ -160,10 +160,11 @@ export default function PosShow() {
                 </div>
 
                 {/* Meta info row */}
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     {[
                         { icon: ShoppingCart, label: "Items",   value: `${sale.items.length} item${sale.items.length !== 1 ? "s" : ""}` },
-                        { icon: User,         label: "Cashier", value: sale.cashier },
+                        { icon: User,         label: "Created By", value: sale.order_created_by ?? sale.cashier },
+                        { icon: User,         label: "Payment By", value: sale.payment_received_by ?? sale.cashier },
                         { icon: CreditCard,   label: "Method",  value: (sale.payment_method.charAt(0).toUpperCase() + sale.payment_method.slice(1)) },
                     ].map(({ icon: Icon, label, value }) => (
                         <div key={label} className="bg-card border border-border rounded-xl p-3 text-center">

@@ -60,7 +60,9 @@ class PosController extends Controller
                 'category:id,name',
                 // Load stock without the >0 filter so we always get the price/capital row
                 'stocks'                               => fn ($q) => $q->where('branch_id', $branchId),
-                'variants'                             => fn ($q) => $q->where('is_available', true)->orderBy('sort_order'),
+                'variants'                             => fn ($q) => $q->where('is_available', true)
+                    ->with(['stocks' => fn ($s) => $s->where('branch_id', $branchId)])
+                    ->orderBy('sort_order'),
                 'bundle.items.componentProduct:id,name',
                 'bundle.items.componentVariant:id,name',
                 'recipeIngredients.ingredient:id,name',
@@ -137,6 +139,17 @@ class PosController extends Controller
                 ])->values();
         }
 
+        $pendingOrders = $user->canCollectPosPayments()
+            ? PosQueuedOrder::with(['items.product', 'items.variant', 'listedBy'])
+                ->where('branch_id', $branchId)
+                ->pendingPayment()
+                ->latest()
+                ->limit(50)
+                ->get()
+                ->map(fn (PosQueuedOrder $order) => $this->mapQueuedOrder($order))
+                ->values()
+            : collect();
+
         return Inertia::render('Pos/Index', [
             'products'          => $products,
             'categories'        => $categories,
@@ -152,6 +165,9 @@ class PosController extends Controller
             'open_table_orders' => $openTableOrders,
             'dining_tables'     => $diningTables,
             'preferred_layout'  => $user->pos_layout ?? 'grid',
+            'cashier_type'      => $user->cashier_type ?? 'counter_cashier',
+            'can_collect_payments' => $user->canCollectPosPayments(),
+            'pending_orders'    => $pendingOrders,
         ]);
     }
 
@@ -208,6 +224,15 @@ class PosController extends Controller
         }
     }
 
+    private function deductVariantStock(\App\Models\ProductVariant $variant, int $qty, int $branchId, bool $allowNeg): void
+    {
+        $stock = $variant->stocks->firstWhere('branch_id', $branchId) ?? $variant->stocks->first();
+        if (! $stock) throw new \RuntimeException("Variant \"{$variant->name}\" has no stock in this branch.");
+        $this->assertStockIsSellable($stock, $variant->name);
+        if (! $allowNeg && $stock->stock < $qty) throw new \RuntimeException("Insufficient stock for \"{$variant->name}\". Only {$stock->stock} left.");
+        $stock->decrement('stock', $qty);
+    }
+
     /**
      * Restore stock for a set of sale items — mirrors deductProductStock.
      * Items must be loaded with: product.stocks, product.bundle.items.componentProduct.stocks,
@@ -216,6 +241,12 @@ class PosController extends Controller
     private function restoreStockForItems(\Illuminate\Database\Eloquent\Collection $items, int $branchId): void
     {
         foreach ($items as $item) {
+            if ($item->product_variant_id && $item->variant) {
+                $variantStock = $item->variant->stocks->firstWhere('branch_id', $branchId);
+                if ($variantStock) $variantStock->increment('stock', $item->quantity);
+                continue;
+            }
+
             $product = $item->product;
             if (! $product) continue;
 
@@ -260,28 +291,40 @@ class PosController extends Controller
 
         try {
             $order = DB::transaction(function () use ($validated, $user, $branchId) {
+                $allowNeg = (bool) SystemSetting::get('inventory.allow_negative_stock', $branchId, false);
                 $subtotal = 0;
                 $lines = [];
 
                 foreach ($validated['items'] as $item) {
                     $product = Product::with([
-                        'variants',
+                        'variants.stocks' => fn ($q) => $q->where('branch_id', $branchId),
                         'stocks' => fn ($q) => $q->where('branch_id', $branchId),
                     ])->findOrFail($item['id']);
 
                     $stock = $product->stocks->first();
-                    if (! $stock && ! in_array($product->product_type, ['bundle', 'made_to_order'], true)) {
+                    $variant = ! empty($item['variant_id']) ? $product->variants->firstWhere('id', $item['variant_id']) : null;
+                    $variantStock = $variant?->stocks->first();
+                    $qty = (int) $item['qty'];
+
+                    if (! empty($item['variant_id']) && ! $variant) {
+                        throw new \RuntimeException("Selected variant is not available for \"{$product->name}\".");
+                    }
+                    if ($variant && ! $variantStock) {
+                        throw new \RuntimeException("Variant \"{$variant->name}\" has no stock in this branch.");
+                    }
+                    if (! $variant && ! $stock && ! in_array($product->product_type, ['bundle', 'made_to_order'], true)) {
                         throw new \RuntimeException("Product \"{$product->name}\" has no stock in this branch.");
                     }
-                    $this->assertStockIsSellable($stock, $product->name);
-
-                    $unitPrice = (float) ($stock?->price ?? 0);
-                    if (! empty($item['variant_id'])) {
-                        $variant = $product->variants->firstWhere('id', $item['variant_id']);
-                        if ($variant) $unitPrice += (float) $variant->extra_price;
+                    $this->assertStockIsSellable($variantStock ?? $stock, $variant?->name ?? $product->name);
+                    if (! $allowNeg && $variantStock && $variantStock->stock < $qty) {
+                        throw new \RuntimeException("Insufficient stock for \"{$variant->name}\". Only {$variantStock->stock} left.");
+                    }
+                    if (! $allowNeg && ! $variant && $stock && $stock->stock < $qty) {
+                        throw new \RuntimeException("Insufficient stock for \"{$product->name}\". Only {$stock->stock} left.");
                     }
 
-                    $qty = (int) $item['qty'];
+                    $unitPrice = (float) ($variantStock?->price ?? $stock?->price ?? 0);
+
                     $lineTotal = round($unitPrice * $qty, 2);
                     $subtotal += $lineTotal;
                     $lines[] = [
@@ -300,6 +343,7 @@ class PosController extends Controller
                     'subtotal' => $subtotal,
                     'total' => $subtotal,
                     'status' => 'pending',
+                    'payment_status' => 'pending_payment',
                 ]);
 
                 foreach ($lines as $line) $order->items()->create($line);
@@ -316,8 +360,18 @@ class PosController extends Controller
     public function queuedOrder(string $token): JsonResponse
     {
         $user = Auth::user();
+
+        if (! $user->canCollectPosPayments()) {
+            return response()->json(['message' => 'Order takers cannot collect payments for queued orders.'], 403);
+        }
+
+        $lookup = strtoupper(trim($token));
+
         $order = PosQueuedOrder::with(['items.product', 'items.variant', 'listedBy'])
-            ->where('qr_token', strtoupper(trim($token)))
+            ->where(fn ($q) => $q
+                ->where('qr_token', $lookup)
+                ->orWhere('ticket_number', $lookup)
+            )
             ->first();
 
         if (! $order || $order->branch_id !== $user->branch_id) {
@@ -331,12 +385,42 @@ class PosController extends Controller
         return response()->json(['order' => $this->mapQueuedOrder($order)]);
     }
 
+    public function cancelQueuedOrder(PosQueuedOrder $order): RedirectResponse
+    {
+        $user = Auth::user();
+
+        if (! $user->canCollectPosPayments()) {
+            return back()->withErrors(['error' => 'Only counter cashiers can remove pending payment orders.']);
+        }
+
+        if ($order->branch_id !== $user->branch_id) {
+            abort(403, 'Unauthorized access to this queued order.');
+        }
+
+        if (! $order->isPending()) {
+            return back()->withErrors(['error' => 'This queued order is no longer pending.']);
+        }
+
+        $order->update([
+            'status' => 'cancelled',
+            'payment_status' => 'cancelled',
+            'processed_by' => $user->id,
+            'processed_at' => now(),
+        ]);
+
+        return back()->with('success', 'Pending order removed.');
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $user     = Auth::user();
         $branchId = $user->branch_id;
 
         if (! $branchId) return back()->withErrors(['error' => 'No branch assigned.']);
+
+        if (! $user->canCollectPosPayments()) {
+            return back()->withErrors(['error' => 'Order takers can only send orders to Pending Payment. A counter cashier must collect payment.']);
+        }
 
         // Enforce cash session requirement — tied to the cashier's own session
         $requireSession = (bool) SystemSetting::get('pos.require_cash_session', $branchId, true);
@@ -386,6 +470,7 @@ class PosController extends Controller
                 if (! empty($validated['queued_order_id'])) {
                     $queuedOrder = PosQueuedOrder::where('id', $validated['queued_order_id'])
                         ->where('branch_id', $branchId)
+                        ->with(['items'])
                         ->lockForUpdate()
                         ->firstOrFail();
 
@@ -401,24 +486,30 @@ class PosController extends Controller
 
                 foreach ($validated['items'] as $item) {
                     $product = Product::with([
-                        'variants',
+                        'variants.stocks' => fn ($q) => $q->where('branch_id', $branchId)->lockForUpdate(),
                         'stocks'                                => fn ($q) => $q->where('branch_id', $branchId)->lockForUpdate(),
                         'bundle.items.componentProduct.stocks'  => fn ($q) => $q->where('branch_id', $branchId)->lockForUpdate(),
                         'recipeIngredients.ingredient.stocks'   => fn ($q) => $q->where('branch_id', $branchId)->lockForUpdate(),
                     ])->findOrFail($item['id']);
 
-                    $stock     = $product->stocks->first();
-                    $unitPrice = (float) ($stock?->price ?? 0);
-                    $saleQty   = (int) $item['qty'];
+                    $stock        = $product->stocks->first();
+                    $saleQty      = (int) $item['qty'];
+                    $variant      = ! empty($item['variant_id']) ? $product->variants->firstWhere('id', $item['variant_id']) : null;
+                    $variantStock = $variant?->stocks->first();
 
                     // ── Resolve variant price add-on ───────────────────────
-                    if (! empty($item['variant_id'])) {
-                        $v = $product->variants->firstWhere('id', $item['variant_id']);
-                        if ($v) $unitPrice += (float) $v->extra_price;
+                    if (! empty($item['variant_id']) && ! $variant) {
+                        throw new \RuntimeException("Selected variant is not available for \"{$product->name}\".");
                     }
 
+                    $unitPrice = (float) ($variantStock?->price ?? $stock?->price ?? 0);
+
                     // ── Deduct stock based on product type ─────────────────
-                    $this->deductProductStock($product, $saleQty, $branchId, $allowNeg);
+                    if ($variant) {
+                        $this->deductVariantStock($variant, $saleQty, $branchId, $allowNeg);
+                    } else {
+                        $this->deductProductStock($product, $saleQty, $branchId, $allowNeg);
+                    }
 
                     $line      = round($unitPrice * $saleQty, 2);
                     $subtotal += $line;
@@ -478,6 +569,8 @@ class PosController extends Controller
                 $sale = Sale::create([
                     'receipt_number'  => $this->generateReceiptNumber($branchId),
                     'user_id'         => $user->id,
+                    'order_created_by' => $queuedOrder?->listed_by ?? $user->id,
+                    'payment_received_by' => $user->id,
                     'branch_id'       => $branchId,
                     'cash_session_id' => $openSession?->id ?? $validated['cash_session_id'] ?? null,
                     'table_order_id'  => $validated['table_order_id']  ?? null,
@@ -501,6 +594,7 @@ class PosController extends Controller
                 if ($queuedOrder) {
                     $queuedOrder->update([
                         'status' => 'processed',
+                        'payment_status' => 'paid',
                         'processed_by' => $user->id,
                         'sale_id' => $sale->id,
                         'processed_at' => now(),
@@ -568,7 +662,7 @@ class PosController extends Controller
     public function show(Sale $sale): Response
     {
         $this->authorizeSale($sale);
-        $sale->load(['items.product', 'items.variant', 'user', 'branch', 'cashSession', 'tableOrder.table']);
+        $sale->load(['items.product', 'items.variant', 'user', 'orderCreator', 'paymentReceiver', 'branch', 'cashSession', 'tableOrder.table']);
         return Inertia::render('Pos/Show', ['sale' => $this->mapSale($sale)]);
     }
 
@@ -589,7 +683,7 @@ class PosController extends Controller
         $status = $request->input('status');
         $method = $request->input('payment_method');
 
-        $query = Sale::with(['items.product', 'items.variant', 'user', 'tableOrder.table'])
+        $query = Sale::with(['items.product', 'items.variant', 'user', 'orderCreator', 'paymentReceiver', 'tableOrder.table'])
             ->where('branch_id', $branchId)
             ->whereDate('created_at', '>=', $from)
             ->whereDate('created_at', '<=', $to)
@@ -651,7 +745,13 @@ class PosController extends Controller
         $branchId = $user->branch_id;
 
         $products = Product::query()
-            ->with(['category:id,name', 'stocks' => fn ($q) => $q->where('branch_id', $branchId), 'variants' => fn ($q) => $q->where('is_available', true)->orderBy('sort_order')])
+            ->with([
+                'category:id,name',
+                'stocks' => fn ($q) => $q->where('branch_id', $branchId),
+                'variants' => fn ($q) => $q->where('is_available', true)
+                    ->with(['stocks' => fn ($s) => $s->where('branch_id', $branchId)])
+                    ->orderBy('sort_order'),
+            ])
             ->whereHas('stocks', fn ($q) => $q->where('branch_id', $branchId))
             ->get()->map(fn ($p) => $this->mapProduct($p, $branchId))->values();
 
@@ -667,6 +767,10 @@ class PosController extends Controller
         $branchId = $user->branch_id;
 
         if ($sale->created_at->isBefore(today()) && ! $user->isAdmin()) return back()->withErrors(['error' => "Only today's sales can be edited."]);
+
+        if (! $user->canCollectPosPayments()) {
+            return back()->withErrors(['error' => 'Order takers cannot edit paid sales or payment details.']);
+        }
 
         $validated = $request->validate([
             'items'              => ['required', 'array', 'min:1'],
@@ -686,6 +790,7 @@ class PosController extends Controller
                 // Restore old stock (type-aware for bundles and MTO)
                 $sale->load([
                     'items.product.stocks',
+                    'items.variant.stocks',
                     'items.product.bundle.items.componentProduct.stocks',
                     'items.product.recipeIngredients.ingredient.stocks',
                 ]);
@@ -697,22 +802,28 @@ class PosController extends Controller
 
                 foreach ($validated['items'] as $item) {
                     $product = Product::with([
-                        'variants',
+                        'variants.stocks' => fn ($q) => $q->where('branch_id', $branchId)->lockForUpdate(),
                         'stocks'                               => fn ($q) => $q->where('branch_id', $branchId)->lockForUpdate(),
                         'bundle.items.componentProduct.stocks' => fn ($q) => $q->where('branch_id', $branchId)->lockForUpdate(),
                         'recipeIngredients.ingredient.stocks'  => fn ($q) => $q->where('branch_id', $branchId)->lockForUpdate(),
                     ])->findOrFail($item['id']);
 
-                    $stock     = $product->stocks->firstWhere('branch_id', $branchId) ?? $product->stocks->first();
-                    $unitPrice = (float) ($stock?->price ?? 0);
-                    $saleQty   = (int) $item['qty'];
+                    $stock        = $product->stocks->firstWhere('branch_id', $branchId) ?? $product->stocks->first();
+                    $saleQty      = (int) $item['qty'];
+                    $variant      = ! empty($item['variant_id']) ? $product->variants->firstWhere('id', $item['variant_id']) : null;
+                    $variantStock = $variant?->stocks->first();
 
-                    if (! empty($item['variant_id'])) {
-                        $v = $product->variants->firstWhere('id', $item['variant_id']);
-                        if ($v) $unitPrice += (float) $v->extra_price;
+                    if (! empty($item['variant_id']) && ! $variant) {
+                        throw new \RuntimeException("Selected variant is not available for \"{$product->name}\".");
                     }
 
-                    $this->deductProductStock($product, $saleQty, $branchId, $allowNeg);
+                    $unitPrice = (float) ($variantStock?->price ?? $stock?->price ?? 0);
+
+                    if ($variant) {
+                        $this->deductVariantStock($variant, $saleQty, $branchId, $allowNeg);
+                    } else {
+                        $this->deductProductStock($product, $saleQty, $branchId, $allowNeg);
+                    }
 
                     $lt = round($unitPrice * $saleQty, 2);
                     $subtotal += $lt;
@@ -759,6 +870,7 @@ class PosController extends Controller
             // Load items with all relations needed for type-aware stock restore
             $sale->load([
                 'items.product.stocks',
+                'items.variant.stocks',
                 'items.product.bundle.items.componentProduct.stocks',
                 'items.product.recipeIngredients.ingredient.stocks',
             ]);
@@ -783,7 +895,8 @@ class PosController extends Controller
 
         $product = Product::with([
             'stocks'   => fn ($q) => $q->where('branch_id', $branchId),
-            'variants' => fn ($q) => $q->where('is_available', true),
+            'variants' => fn ($q) => $q->where('is_available', true)
+                ->with(['stocks' => fn ($s) => $s->where('branch_id', $branchId)]),
             'category:id,name',
             'bundle.items.componentProduct:id,name',
             'recipeIngredients.ingredient:id,name',
@@ -799,6 +912,10 @@ class PosController extends Controller
     private function mapProduct(Product $p, int $branchId): array
     {
         $stock = $p->stocks->firstWhere('branch_id', $branchId) ?? $p->stocks->first();
+        $variantStockTotal = $p->variants
+            ->flatMap(fn ($v) => $v->stocks)
+            ->where('branch_id', $branchId)
+            ->sum('stock');
 
         // ── Determine the effective "stock" number shown on the POS card ──────
         //
@@ -810,7 +927,7 @@ class PosController extends Controller
         //                   use the base stock row as a price anchor)
         $displayStock = match ($p->product_type) {
             'bundle', 'made_to_order' => 999,
-            default                   => (int) ($stock?->stock ?? 0),
+            default                   => $variantStockTotal > 0 ? (int) $variantStockTotal : (int) ($stock?->stock ?? 0),
         };
 
         return [
@@ -821,15 +938,26 @@ class PosController extends Controller
             'product_type' => $p->product_type,
             'is_taxable'   => (bool) $p->is_taxable,
             'price'        => (float) ($stock?->price ?? 0),
+            'base_stock'   => (int) ($stock?->stock ?? 0),
             'stock'        => $displayStock,
             'category'     => $p->category ? ['id' => $p->category->id, 'name' => $p->category->name] : null,
-            'variants'     => $p->variants->map(fn ($v) => [
-                'id'          => $v->id,
-                'name'        => $v->name,
-                'extra_price' => (float) $v->extra_price,
-                'attributes'  => $v->attributes ?? [],
-                'is_available'=> $v->is_available,
-            ])->values(),
+            'variants'     => $p->variants->map(function ($v) use ($branchId, $stock) {
+                $variantStock = $v->stocks->firstWhere('branch_id', $branchId) ?? $v->stocks->first();
+                $basePrice = (float) ($stock?->price ?? 0);
+                $variantPrice = $variantStock ? (float) $variantStock->price : null;
+
+                return [
+                    'id'          => $v->id,
+                    'name'        => $v->name,
+                    'extra_price' => $variantPrice !== null ? round($variantPrice - $basePrice, 2) : (float) $v->extra_price,
+                    'price'       => $variantPrice,
+                    'stock'       => (int) ($variantStock?->stock ?? 0),
+                    'attributes'  => $v->attributes ?? [],
+                    'is_available'=> $v->is_available,
+                    'expiry_date' => $variantStock?->expiry_date?->toDateString(),
+                    'is_expired'  => (bool) ($variantStock?->expiry_date?->isPast() ?? false),
+                ];
+            })->values(),
             'has_variants' => $p->variants->count() > 0,
             // Bundle components — info shown on POS card
             'bundle_items' => $p->bundle
@@ -865,6 +993,8 @@ class PosController extends Controller
             'subtotal'      => (float) $order->subtotal,
             'total'         => (float) $order->total,
             'expires_at'    => $order->expires_at?->toIso8601String(),
+            'payment_status'=> $order->payment_status ?? 'pending_payment',
+            'created_at'    => $order->created_at?->toIso8601String(),
             'listed_by'     => $order->listedBy ? trim("{$order->listedBy->fname} {$order->listedBy->lname}") : null,
             'items'         => $order->items->map(fn ($item) => [
                 'product_id'   => $item->product_id,
@@ -894,7 +1024,15 @@ class PosController extends Controller
             'customer_name'   => $sale->customer_name,
             'notes'           => $sale->notes,
             'created_at'      => $sale->created_at?->toIso8601String(),
-            'cashier'         => $sale->user ? trim("{$sale->user->fname} {$sale->user->lname}") : 'Unknown',
+            'cashier'         => $sale->paymentReceiver
+                ? trim("{$sale->paymentReceiver->fname} {$sale->paymentReceiver->lname}")
+                : ($sale->user ? trim("{$sale->user->fname} {$sale->user->lname}") : 'Unknown'),
+            'order_created_by' => $sale->orderCreator
+                ? trim("{$sale->orderCreator->fname} {$sale->orderCreator->lname}")
+                : ($sale->user ? trim("{$sale->user->fname} {$sale->user->lname}") : 'Unknown'),
+            'payment_received_by' => $sale->paymentReceiver
+                ? trim("{$sale->paymentReceiver->fname} {$sale->paymentReceiver->lname}")
+                : ($sale->user ? trim("{$sale->user->fname} {$sale->user->lname}") : 'Unknown'),
             'table_order_id'  => $sale->table_order_id,
             'table_label'     => $sale->tableOrder?->table?->label,
             'hide_product_names' => $hideProductNames,
@@ -902,7 +1040,7 @@ class PosController extends Controller
 
         $base['items'] = $brief
             ? $sale->items->map(fn ($i) => ['product_name' => $i->product?->name ?? '(deleted)', 'variant_name' => $i->variant?->name, 'quantity' => (int) $i->quantity, 'price' => (float) $i->price])->values()
-            : $sale->items->map(fn ($i) => ['id' => $i->id, 'product_id' => $i->product_id, 'product_name' => $i->product?->name ?? '(deleted)', 'variant_name' => $i->variant?->name, 'quantity' => (int) $i->quantity, 'price' => (float) $i->price, 'total' => (float) $i->total])->values();
+            : $sale->items->map(fn ($i) => ['id' => $i->id, 'product_id' => $i->product_id, 'product_variant_id' => $i->product_variant_id, 'product_name' => $i->product?->name ?? '(deleted)', 'variant_name' => $i->variant?->name, 'quantity' => (int) $i->quantity, 'price' => (float) $i->price, 'total' => (float) $i->total])->values();
 
         if ($brief) $base['item_count'] = $sale->items->count();
         return $base;

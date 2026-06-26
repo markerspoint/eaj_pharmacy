@@ -7,6 +7,7 @@ use App\Models\Promo;
 use App\Models\SystemSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -33,7 +34,7 @@ class HandleInertiaRequests extends Middleware
         $user = Auth::user();
 
         if ($user && ! $user->relationLoaded('branch')) {
-            $user->load(['branch.supplier']);
+            $user->load(['branch']);
         }
 
         $branch   = $user?->branch;
@@ -64,11 +65,35 @@ class HandleInertiaRequests extends Middleware
                 ->all();
         }
 
-        $globalLogo = SystemSetting::whereNull('branch_id')
-            ->where('key', 'general.logo')
-            ->first(['value', 'updated_at']);
-        $globalLogoPath = (string) ($globalLogo?->value ?? '');
-        $globalLogoVersion = $globalLogo?->updated_at?->timestamp;
+        $brandImage = function (string $key) use ($branchId) {
+            $branchRow = $branchId
+                ? SystemSetting::where('branch_id', $branchId)->where('key', $key)->first(['value', 'updated_at'])
+                : null;
+            $globalRow = SystemSetting::whereNull('branch_id')->where('key', $key)->first(['value', 'updated_at']);
+
+            return $branchRow && (string) $branchRow->value !== '' ? $branchRow : $globalRow;
+        };
+
+        $brandVersion = function (string $path, mixed $updatedAt): string {
+            $path = ltrim(str_replace('\\', '/', $path), '/');
+            $mtime = Storage::disk('public')->exists($path)
+                ? Storage::disk('public')->lastModified($path)
+                : 0;
+
+            return implode('-', array_filter([
+                $updatedAt?->timestamp,
+                $mtime,
+                sprintf('%u', crc32($path)),
+            ]));
+        };
+
+        $effectiveLogo = $brandImage('general.logo');
+        $logoPath = (string) ($effectiveLogo?->value ?? '');
+        $logoVersion = $logoPath !== '' ? $brandVersion($logoPath, $effectiveLogo?->updated_at) : null;
+
+        $effectiveIcon = $brandImage('general.app_icon');
+        $iconPath = (string) ($effectiveIcon?->value ?? '');
+        $iconVersion = $iconPath !== '' ? $brandVersion($iconPath, $effectiveIcon?->updated_at) : null;
 
         return array_merge(parent::share($request), [
 
@@ -79,9 +104,20 @@ class HandleInertiaRequests extends Middleware
                 'currency'       => SystemSetting::currencySymbol(),
                 'ai_chat_enabled'=> (bool) SystemSetting::get('general.ai_chat_enabled', null, true),
                 'color_theme'    => (string) SystemSetting::get('general.color_theme', null, 'ea'),
-                'logo_url'       => $globalLogoPath !== ''
-                    ? route('brand.logo', $globalLogoVersion ? ['v' => $globalLogoVersion] : [])
+                'logo_url'       => $logoPath !== ''
+                    ? route('brand.logo', array_filter([
+                        'branchId' => $branchId,
+                        'v'        => $logoVersion,
+                    ]))
                     : null,
+                'logo_version'   => $logoVersion,
+                'icon_url'       => $iconPath !== ''
+                    ? route('brand.icon', array_filter([
+                        'branchId' => $branchId,
+                        'v'        => $iconVersion,
+                    ]))
+                    : asset('uploads/ease-icon.png'),
+                'icon_version'   => $iconVersion,
             ],
 
             // ── Auth ──────────────────────────────────────────────
@@ -100,6 +136,8 @@ class HandleInertiaRequests extends Middleware
                     // Role
                     'role'       => $user->role,
                     'role_label' => $user->role_label,
+                    'cashier_type' => $user->cashier_type ?? 'counter_cashier',
+                    'cashier_type_label' => $user->cashier_type_label,
 
                     // Menu access array — used by hasAccess() in the sidebar
                     // super_admin gets all menu IDs as strings; others get only what's assigned
@@ -114,6 +152,7 @@ class HandleInertiaRequests extends Middleware
                     'is_cashier'       => $user->isCashier(),
                     'is_admin'         => $user->isAdmin(),
                     'can_approve'      => $user->canApprove(),
+                    'can_collect_payments' => $user->canCollectPosPayments(),
                     'pos_layout'       => $user->pos_layout ?? 'grid',
 
                     // Branch (null for super_admin who has no branch)
@@ -128,15 +167,6 @@ class HandleInertiaRequests extends Middleware
                     ] : null,
 
                     // Supplier — resolved through branch
-                    'supplier' => $branch?->supplier ? [
-                        'id'             => $branch->supplier->id,
-                        'name'           => $branch->supplier->name,
-                        'phone'          => $branch->supplier->phone,
-                        'address'        => $branch->supplier->address,
-                        'contact_person' => $branch->supplier->contact_person,
-                        'is_campus'      => $branch->supplier->is_campus,
-                    ] : null,
-
                 ] : null,
             ],
 

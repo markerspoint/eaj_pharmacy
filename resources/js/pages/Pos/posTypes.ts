@@ -4,8 +4,12 @@ export interface Variant {
     id: number;
     name: string;
     extra_price: number;
+    price?: number | null;
+    stock?: number;
     attributes: Record<string, string>;
     is_available: boolean;
+    expiry_date?: string | null;
+    is_expired?: boolean;
 }
 
 export interface BundleItem { name: string; qty: number; required: boolean; }
@@ -18,6 +22,7 @@ export interface Product {
     product_img: string | null;
     product_type: string;
     price: number;
+    base_stock?: number;
     stock: number;
     category: { id: number; name: string } | null;
     variants: Variant[];
@@ -36,9 +41,11 @@ export interface QueuedOrder {
     qr_token: string;
     customer_name: string | null;
     status: string;
+    payment_status?: string;
     subtotal: number;
     total: number;
     expires_at: string | null;
+    created_at?: string | null;
     listed_by: string | null;
     items: {
         product_id: number;

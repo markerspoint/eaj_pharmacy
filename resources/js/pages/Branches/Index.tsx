@@ -14,8 +14,6 @@ import { Input } from "@/components/ui/input";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Supplier { id: number; name: string; }
-
 interface Branch {
     id: number;
     name: string;
@@ -26,8 +24,6 @@ interface Branch {
     is_active: boolean;
     business_type: string;
     business_type_label: string;
-    supplier_id: number | null;
-    supplier: { id: number; name: string } | null;
     feature_flags: Record<string, boolean>;
     use_table_ordering: boolean;
     use_variants: boolean;
@@ -41,7 +37,6 @@ interface Branch {
 
 interface PageProps {
     branches:      Branch[];
-    suppliers:     Supplier[];
     businessTypes: Record<string, string>;
     auth:          { user: { is_super_admin: boolean; is_administrator: boolean } | null };
     flash:         { message?: { type: string; text: string } };
@@ -52,7 +47,7 @@ type FormMode = "create" | "edit";
 
 interface BranchForm {
     name: string; code: string; address: string; phone: string;
-    contact_person: string; supplier_id: string; business_type: string;
+    contact_person: string; business_type: string;
     use_table_ordering: boolean; use_variants: boolean;
     use_expiry_tracking: boolean; use_recipe_system: boolean;
     use_bundles: boolean; is_active: boolean;
@@ -60,7 +55,7 @@ interface BranchForm {
 
 const EMPTY_FORM: BranchForm = {
     name: "", code: "", address: "", phone: "", contact_person: "",
-    supplier_id: "", business_type: "retail",
+    business_type: "retail",
     use_table_ordering: false, use_variants: false,
     use_expiry_tracking: false, use_recipe_system: false,
     use_bundles: false, is_active: true,
@@ -143,9 +138,9 @@ function Toggle({ checked, onChange, label, description }: {
 
 // ─── Branch Drawer ────────────────────────────────────────────────────────────
 
-function BranchDrawer({ mode, branch, suppliers, businessTypes, onClose }: {
+function BranchDrawer({ mode, branch, businessTypes, onClose }: {
     mode: FormMode; branch: Branch | null;
-    suppliers: Supplier[]; businessTypes: Record<string, string>;
+    businessTypes: Record<string, string>;
     onClose: () => void;
 }) {
     const [form,     setForm]     = useState<BranchForm>(EMPTY_FORM);
@@ -161,7 +156,6 @@ function BranchDrawer({ mode, branch, suppliers, businessTypes, onClose }: {
                 address:             branch.address          ?? "",
                 phone:               branch.phone            ?? "",
                 contact_person:      branch.contact_person   ?? "",
-                supplier_id:         branch.supplier_id?.toString() ?? "",
                 business_type:       branch.business_type,
                 use_table_ordering:  branch.use_table_ordering,
                 use_variants:        branch.use_variants,
@@ -190,7 +184,7 @@ function BranchDrawer({ mode, branch, suppliers, businessTypes, onClose }: {
 
     const handleSubmit = () => {
         setLoading(true); setErrors({});
-        const payload = { ...form, supplier_id: form.supplier_id || null };
+        const payload = { ...form };
         const isCreate = mode === "create";
         const url = isCreate ? routes.branches.store() : routes.branches.update(branch!.id);
 
@@ -304,16 +298,6 @@ function BranchDrawer({ mode, branch, suppliers, businessTypes, onClose }: {
                                     ))}
                                 </div>
                                 {errors.business_type && <p className="field-error">{errors.business_type}</p>}
-                            </div>
-
-                            {/* Supplier */}
-                            <div>
-                                <label className="field-label">Linked Supplier</label>
-                                <select value={form.supplier_id} onChange={e => set("supplier_id", e.target.value)}
-                                    className="w-full h-9 mt-1 px-3 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary text-foreground">
-                                    <option value="">No supplier linked</option>
-                                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                </select>
                             </div>
 
                             {/* Phone + Contact */}
@@ -443,7 +427,7 @@ function DeleteDialog({ branch, onClose }: { branch: Branch; onClose: () => void
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function BranchesIndex() {
-    const { branches, suppliers, businessTypes, auth, flash } = usePage<PageProps>().props;
+    const { branches, businessTypes, auth, flash } = usePage<PageProps>().props;
 
     const [search,       setSearch]       = useState("");
     const [typeFilter,   setTypeFilter]   = useState("");
@@ -728,7 +712,6 @@ export default function BranchesIndex() {
                 <BranchDrawer
                     mode={drawer.mode}
                     branch={drawer.branch}
-                    suppliers={suppliers}
                     businessTypes={businessTypes}
                     onClose={() => setDrawer(null)}
                 />

@@ -22,6 +22,8 @@ interface Props {
       receipt_number: string;
       created_at: string;
       user?: { full_name: string };
+      order_creator?: { full_name: string };
+      payment_receiver?: { full_name: string };
       customer_name?: string;
       total: number;
       payment_method: string;
@@ -163,7 +165,8 @@ export default function SalesReport({ sales, branches, filters: initialFilters }
                     <TableRow>
                       <TableHead>Receipt #</TableHead>
                       <TableHead>Date</TableHead>
-                      <TableHead>Cashier</TableHead>
+                      <TableHead>Created By</TableHead>
+                      <TableHead>Payment By</TableHead>
                       <TableHead>Customer</TableHead>
                       <TableHead className="text-right">Total</TableHead>
                       <TableHead className="text-center">Payment</TableHead>
@@ -177,7 +180,8 @@ export default function SalesReport({ sales, branches, filters: initialFilters }
                         <TableCell>
                           {fmtDate(sale.created_at, "MMM d, h:mm a")}
                         </TableCell>
-                        <TableCell>{sale.user?.full_name || '—'}</TableCell>
+                        <TableCell>{sale.order_creator?.full_name || sale.user?.full_name || '—'}</TableCell>
+                        <TableCell>{sale.payment_receiver?.full_name || sale.user?.full_name || '—'}</TableCell>
                         <TableCell>{sale.customer_name || 'Walk-in'}</TableCell>
                         <TableCell className="text-right font-semibold tabular-nums">
                           ₱{Number(sale.total).toLocaleString()}

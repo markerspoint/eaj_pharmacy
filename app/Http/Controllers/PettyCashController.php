@@ -59,6 +59,10 @@ class PettyCashController extends Controller
         $user = Auth::user();
         $branchId = $user->branch_id;
 
+        if (! $user->canCollectPosPayments()) {
+            return back()->withErrors(['error' => 'Order takers cannot perform cash in/out transactions.']);
+        }
+
         $validated = $request->validate([
             'fund_id'             => ['required', 'exists:petty_cash_funds,id'],
             'voucher_type'        => ['required', 'in:withdrawal,replenishment'],

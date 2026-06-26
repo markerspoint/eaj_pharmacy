@@ -9,8 +9,7 @@ import {
     Plus, Search, X, Edit2, Trash2, Shield, ChevronDown,
     Eye, EyeOff, Users, Key,
     CheckSquare, Square, AlertTriangle, User as UserIcon,
-    CircleDot, LayoutGrid, Tablet, List, Coffee,
-    UtensilsCrossed, Scissors, Monitor, Smartphone,
+    CircleDot, LayoutGrid, Tablet, QrCode, Smartphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +23,7 @@ interface Branch {
 interface UserRow {
     id: number; fname: string; lname: string; full_name: string;
     username: string; role: string; role_label: string;
+    cashier_type?: string; cashier_type_label?: string;
     branch_id: number | null; branch: Branch | null;
     access: string[]; pos_layout: string; pos_layout_label: string;
     created_at: string; is_self: boolean;
@@ -44,12 +44,12 @@ type FormMode = "create" | "edit";
 
 interface UserForm {
     fname: string; lname: string; username: string; password: string;
-    role: string; branch_id: string; access: string[]; pos_layout: string;
+    role: string; cashier_type: string; branch_id: string; access: string[]; pos_layout: string;
 }
 
 const EMPTY_FORM: UserForm = {
     fname: "", lname: "", username: "", password: "",
-    role: "cashier", branch_id: "", access: [], pos_layout: "grid",
+    role: "cashier", cashier_type: "counter_cashier", branch_id: "", access: [], pos_layout: "grid",
 };
 
 // ─── POS Layout definitions ───────────────────────────────────────────────────
@@ -64,18 +64,19 @@ interface PosLayoutDef {
 }
 
 const POS_LAYOUTS: PosLayoutDef[] = [
-    { value: "grid",       label: "PC / Standard",     icon: LayoutGrid,       desc: "Image cards, 4–5 columns. Best for retail & general use.",          bestFor: ["retail","hardware","pharmacy","warehouse","school","laundry","mixed"] },
-    { value: "tablet",     label: "Tablet / Touch",    icon: Tablet,           desc: "Large touch targets, 3 columns. Good for any tablet POS.",          bestFor: [] },
-    { value: "grocery",    label: "Grocery / Fast",    icon: List,             desc: "Compact rows with barcode. Best for high-volume item scanning.",     bestFor: [] },
-    { value: "cafe",       label: "Cafe / Quick",      icon: Coffee,           desc: "Category-first, text tiles, no images. Fast for F&B ordering.",     bestFor: ["cafe","bakery","food_stall"] },
-    { value: "restaurant", label: "Restaurant / Table",icon: UtensilsCrossed,  desc: "Table map + dine-in orders. For seated service.",                   bestFor: ["restaurant","bar"] },
-    { value: "salon",      label: "Salon / Service",   icon: Scissors,         desc: "Service cards with duration. Customer name required at checkout.",   bestFor: ["salon"] },
-    { value: "kiosk",      label: "Kiosk / Self-serve",icon: Monitor,          desc: "Fullscreen large cards, floating checkout bar. Self-service POS.",   bestFor: [] },
-    { value: "mobile",     label: "Mobile / Phone",    icon: Smartphone,       desc: "Compact vertical layout for Android phones. Single-column, thumb-friendly.", bestFor: [] },
+    { value: "mobile",     label: "Phone",                    icon: Smartphone, desc: "Compact vertical POS for phone-sized screens.", bestFor: [] },
+    { value: "tablet",     label: "Tablet",                   icon: Tablet,     desc: "Large touch targets for tablet counters.", bestFor: [] },
+    { value: "grid",       label: "Standard",     icon: LayoutGrid,       desc: "Main cashier layout for scanning, charging, and processing payments.",          bestFor: ["retail","hardware","pharmacy","warehouse","school","laundry","mixed"] },
+    { value: "fast_cashier", label: "Fast Cashier", icon: LayoutGrid, desc: "Products on the left with cart, discount, tender keypad, and checkout always visible.", bestFor: ["pharmacy","retail","grocery","mixed"] },
+    { value: "order_only", label: "Cashier - Take Orders Only", icon: QrCode,   desc: "Adds items to cart and prints a QR ticket for payment.", bestFor: ["pharmacy","retail","mixed"] },
 ];
 
 function getPosLayoutDef(value: string) {
     return POS_LAYOUTS.find(l => l.value === value) ?? POS_LAYOUTS[0];
+}
+
+function normalizePosLayout(value: string | null | undefined) {
+    return POS_LAYOUTS.some(l => l.value === value) ? value! : "grid";
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -97,12 +98,14 @@ const branchTypeBadge: Record<string, string> = {
 const layoutBadgeColor: Record<string, string> = {
     grid:       "bg-slate-500/15 text-slate-400 border border-slate-500/20",
     tablet:     "bg-blue-500/15 text-blue-400 border border-blue-500/20",
-    grocery:    "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20",
-    cafe:       "bg-purple-500/15 text-purple-400 border border-purple-500/20",
-    restaurant: "bg-orange-500/15 text-orange-400 border border-orange-500/20",
-    salon:      "bg-pink-500/15 text-pink-400 border border-pink-500/20",
-    kiosk:      "bg-cyan-500/15 text-cyan-400 border border-cyan-500/20",
     mobile:     "bg-rose-500/15 text-rose-400 border border-rose-500/20",
+    fast_cashier: "bg-cyan-500/15 text-cyan-500 border border-cyan-500/20",
+    order_only: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20",
+};
+
+const cashierTypeBadgeColor: Record<string, string> = {
+    order_taker: "bg-emerald-500/15 text-emerald-500 border border-emerald-500/20",
+    counter_cashier: "bg-blue-500/15 text-blue-500 border border-blue-500/20",
 };
 
 // ─── Access checkbox grid ─────────────────────────────────────────────────────
@@ -237,6 +240,26 @@ function PosSettingsTab({ value, onChange, branchBusinessType }: {
     );
 }
 
+function CashierTypeOption({ value, label, desc, selected, onSelect }: {
+    value: string; label: string; desc: string; selected: boolean; onSelect: (value: string) => void;
+}) {
+    return (
+        <button type="button" onClick={() => onSelect(value)}
+            className={cn(
+                "w-full flex items-start gap-3 px-4 py-3 rounded-xl border text-left transition-all",
+                selected ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/30 hover:bg-accent"
+            )}>
+            {selected
+                ? <CircleDot className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                : <div className="h-4 w-4 rounded-full border-2 border-border mt-0.5 shrink-0" />}
+            <div>
+                <p className="text-sm font-semibold text-foreground">{label}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{desc}</p>
+            </div>
+        </button>
+    );
+}
+
 function LayoutOption({ l, selected, onSelect }: {
     l: PosLayoutDef; selected: boolean; onSelect: (v: string) => void;
 }) {
@@ -281,8 +304,8 @@ function UserDrawer({ mode, user, branches, roles, menus, menuIds, onClose }: {
 }) {
     const [form, setForm] = useState<UserForm>(user
         ? { fname: user.fname, lname: user.lname, username: user.username, password: "",
-            role: user.role, branch_id: String(user.branch_id ?? ""),
-            access: user.access, pos_layout: user.pos_layout ?? "grid" }
+            role: user.role, cashier_type: user.cashier_type ?? "counter_cashier", branch_id: String(user.branch_id ?? ""),
+            access: user.access, pos_layout: normalizePosLayout(user.pos_layout) }
         : { ...EMPTY_FORM }
     );
     const [showPwd, setShowPwd] = useState(false);
@@ -463,11 +486,33 @@ function UserDrawer({ mode, user, branches, roles, menus, menuIds, onClose }: {
 
                     {/* ── POS Settings tab ─────────────────────── */}
                     {tab === "pos" && (
-                        <PosSettingsTab
-                            value={form.pos_layout}
-                            onChange={v => set("pos_layout", v)}
-                            branchBusinessType={selectedBranch?.business_type}
-                        />
+                        <div className="space-y-5">
+                            {form.role === "cashier" && (
+                                <div className="space-y-2">
+                                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Cashier type</p>
+                                    <CashierTypeOption
+                                        value="counter_cashier"
+                                        label="Counter Cashier"
+                                        desc="Can collect payment, give change, use the assigned drawer, perform cash in/out, and close the drawer."
+                                        selected={form.cashier_type === "counter_cashier"}
+                                        onSelect={v => set("cashier_type", v)}
+                                    />
+                                    <CashierTypeOption
+                                        value="order_taker"
+                                        label="Order Taker"
+                                        desc="Can create/edit unpaid orders and send them to Pending Payment. Cannot collect cash, give change, or use drawer actions."
+                                        selected={form.cashier_type === "order_taker"}
+                                        onSelect={v => set("cashier_type", v)}
+                                    />
+                                    {errors.cashier_type && <p className="field-error">{errors.cashier_type}</p>}
+                                </div>
+                            )}
+                            <PosSettingsTab
+                                value={form.pos_layout}
+                                onChange={v => set("pos_layout", v)}
+                                branchBusinessType={selectedBranch?.business_type}
+                            />
+                        </div>
                     )}
                 </div>
 
@@ -538,6 +583,15 @@ function DeleteDialog({ user, onClose }: { user: UserRow; onClose: () => void })
 
 export default function UsersIndex() {
     const { users, branches, roles, menus, menuIds, auth } = usePage<PageProps>().props;
+    const isSuperAdmin = auth?.user?.is_super_admin ?? false;
+    const visibleUsers = useMemo(
+        () => isSuperAdmin ? users : users.filter(u => u.role !== "super_admin"),
+        [isSuperAdmin, users]
+    );
+    const visibleRoles = useMemo(
+        () => isSuperAdmin ? roles : Object.fromEntries(Object.entries(roles).filter(([role]) => role !== "super_admin")),
+        [isSuperAdmin, roles]
+    );
 
     const [search,       setSearch]       = useState("");
     const [roleFilter,   setRoleFilter]   = useState("");
@@ -547,16 +601,16 @@ export default function UsersIndex() {
     const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null);
 
     const filtered = useMemo(() => {
-        let list = users;
+        let list = visibleUsers;
         if (search.trim()) {
             const q = search.toLowerCase();
             list = list.filter(u => u.full_name.toLowerCase().includes(q) || u.username.toLowerCase().includes(q));
         }
         if (roleFilter)   list = list.filter(u => u.role === roleFilter);
         if (branchFilter) list = list.filter(u => String(u.branch_id) === branchFilter);
-        if (layoutFilter) list = list.filter(u => u.pos_layout === layoutFilter);
+        if (layoutFilter) list = list.filter(u => normalizePosLayout(u.pos_layout) === layoutFilter);
         return list;
-    }, [users, search, roleFilter, branchFilter, layoutFilter]);
+    }, [visibleUsers, search, roleFilter, branchFilter, layoutFilter]);
 
     const canManage = auth?.user?.is_super_admin || auth?.user?.is_administrator;
 
@@ -571,7 +625,7 @@ export default function UsersIndex() {
                     <div>
                         <h1 className="text-xl font-bold text-foreground">User Management</h1>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                            {users.length} user{users.length !== 1 ? "s" : ""} across {branches.length} branch{branches.length !== 1 ? "es" : ""}
+                            {visibleUsers.length} user{visibleUsers.length !== 1 ? "s" : ""} across {branches.length} branch{branches.length !== 1 ? "es" : ""}
                         </p>
                     </div>
                     {canManage && (
@@ -595,7 +649,7 @@ export default function UsersIndex() {
                         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
                             className="h-9 px-3 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary text-foreground min-w-[140px]">
                             <option value="">All roles</option>
-                            {Object.entries(roles).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
+                            {Object.entries(visibleRoles).map(([val, label]) => <option key={val} value={val}>{label}</option>)}
                         </select>
                         <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
                             className="h-9 px-3 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary text-foreground min-w-[140px]">
@@ -621,8 +675,8 @@ export default function UsersIndex() {
 
                 {/* Summary cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {Object.entries(roles).map(([role, label]) => {
-                        const count = users.filter(u => u.role === role).length;
+                    {Object.entries(visibleRoles).map(([role, label]) => {
+                        const count = visibleUsers.filter(u => u.role === role).length;
                         return (
                             <button key={role} onClick={() => setRoleFilter(roleFilter === role ? "" : role)}
                                 className={cn("bg-card border rounded-xl p-4 text-left transition-all hover:shadow-sm",
@@ -656,7 +710,8 @@ export default function UsersIndex() {
                                 {filtered.length === 0 ? (
                                     <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground text-sm">No users found</td></tr>
                                 ) : filtered.map(user => {
-                                    const layoutDef = getPosLayoutDef(user.pos_layout);
+                                    const displayLayout = normalizePosLayout(user.pos_layout);
+                                    const layoutDef = getPosLayoutDef(displayLayout);
                                     const LayoutIcon = layoutDef.icon;
                                     return (
                                         <tr key={user.id} className="hover:bg-muted/20 transition-colors group">
@@ -682,9 +737,16 @@ export default function UsersIndex() {
 
                                             {/* Role */}
                                             <td className="px-4 py-3">
-                                                <span className={cn("text-[10px] font-bold px-2 py-1 rounded-full", roleBadgeColor[user.role] ?? "bg-muted text-muted-foreground")}>
-                                                    {user.role_label}
-                                                </span>
+                                                <div className="flex flex-col items-start gap-1">
+                                                    <span className={cn("text-[10px] font-bold px-2 py-1 rounded-full", roleBadgeColor[user.role] ?? "bg-muted text-muted-foreground")}>
+                                                        {user.role_label}
+                                                    </span>
+                                                    {user.role === "cashier" && (
+                                                        <span className={cn("text-[9px] font-bold px-2 py-0.5 rounded-full", cashierTypeBadgeColor[user.cashier_type ?? "counter_cashier"])}>
+                                                            {user.cashier_type_label ?? "Counter Cashier"}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </td>
 
                                             {/* Branch */}
@@ -709,7 +771,7 @@ export default function UsersIndex() {
                                                     title="Click to change POS layout"
                                                     className={cn(
                                                         "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-all group/layout",
-                                                        layoutBadgeColor[user.pos_layout] ?? "bg-muted text-muted-foreground border-border",
+                                                        layoutBadgeColor[displayLayout] ?? "bg-muted text-muted-foreground border-border",
                                                         canManage && "hover:ring-1 hover:ring-primary/40 cursor-pointer"
                                                     )}>
                                                     <LayoutIcon className="h-3 w-3 shrink-0" />
@@ -764,7 +826,7 @@ export default function UsersIndex() {
             {drawer && (
                 <UserDrawer
                     mode={drawer.mode} user={drawer.user}
-                    branches={branches} roles={roles}
+                    branches={branches} roles={visibleRoles}
                     menus={menus} menuIds={menuIds}
                     onClose={() => setDrawer(null)}
                 />

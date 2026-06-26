@@ -172,6 +172,7 @@ class SystemSetting extends Model
             ['key' => 'general.date_format',     'value' => 'M d, Y',               'type' => 'string',  'group' => 'general', 'label' => 'Date format'],
             ['key' => 'general.timezone',        'value' => 'Asia/Manila',           'type' => 'string',  'group' => 'general', 'label' => 'Timezone'],
             ['key' => 'general.logo',            'value' => '',                      'type' => 'image',   'group' => 'general', 'label' => 'Business logo'],
+            ['key' => 'general.app_icon',        'value' => '',                      'type' => 'image',   'group' => 'general', 'label' => 'Tab icon', 'description' => 'Browser tab and app shortcut icon'],
             ['key' => 'general.color_theme',     'value' => 'ea',                    'type' => 'select',  'group' => 'general', 'label' => 'Color theme', 'description' => 'Brand color palette applied system-wide', 'options' => json_encode(['ea','indigo','emerald','amber','rose'])],
 
             // ── Tax ───────────────────────────────────────────────

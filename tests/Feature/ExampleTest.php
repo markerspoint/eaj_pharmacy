@@ -9,9 +9,9 @@ class ExampleTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_returns_a_successful_response()
+    public function test_guest_can_view_login_page(): void
     {
-        $response = $this->get(route('home'));
+        $response = $this->get(route('login'));
 
         $response->assertOk();
     }

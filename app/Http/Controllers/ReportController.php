@@ -82,11 +82,11 @@ class ReportController extends Controller
 
         $sales = Sale::query()
             ->select([
-                'id', 'receipt_number', 'created_at', 'user_id',
+                'id', 'receipt_number', 'created_at', 'user_id', 'order_created_by', 'payment_received_by',
                 'total', 'payment_method', 'discount_amount',
                 'customer_name'
             ])
-            ->with(['user:id,fname,lname'])
+            ->with(['user:id,fname,lname', 'orderCreator:id,fname,lname', 'paymentReceiver:id,fname,lname'])
             ->where('status', 'completed')
             ->when($branchId, fn($q, $id) => $q->where('branch_id', $id))
             ->when($filters['from_date'] ?? null, fn($q, $d) => $q->whereDate('created_at', '>=', $d))
@@ -96,7 +96,11 @@ class ReportController extends Controller
             ->withQueryString();
 
         // User::full_name is a computed accessor not in $appends — append it so it serializes
-        $sales->getCollection()->each(fn($sale) => $sale->user?->append('full_name'));
+        $sales->getCollection()->each(function ($sale) {
+            $sale->user?->append('full_name');
+            $sale->orderCreator?->append('full_name');
+            $sale->paymentReceiver?->append('full_name');
+        });
 
         return Inertia::render('Reports/SalesReport', [
             'sales'    => $sales,
@@ -112,11 +116,11 @@ class ReportController extends Controller
 
         $sales = Sale::query()
             ->select([
-                'id', 'receipt_number', 'created_at', 'user_id',
+                'id', 'receipt_number', 'created_at', 'user_id', 'order_created_by', 'payment_received_by',
                 'total', 'payment_method', 'discount_amount',
                 'customer_name', 'status'
             ])
-            ->with(['user:id,fname,lname'])
+            ->with(['user:id,fname,lname', 'orderCreator:id,fname,lname', 'paymentReceiver:id,fname,lname'])
             ->where('status', 'completed')
             ->when($branchId, fn($q, $id) => $q->where('branch_id', $id))
             ->when($filters['from_date'] ?? null, fn($q, $d) => $q->whereDate('created_at', '>=', $d))

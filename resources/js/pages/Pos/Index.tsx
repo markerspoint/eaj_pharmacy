@@ -10,7 +10,7 @@ import {
     Search, X, Plus, Minus, Trash2, ShoppingCart, Tag,
     CreditCard, Banknote, Smartphone, CheckCircle2,
     AlertTriangle, Package, History, ScanLine, Printer, QrCode,
-    RefreshCw, Zap, User, ChevronDown, Wallet, CalendarClock,
+    RefreshCw, Zap, User, ChevronDown, Wallet, CalendarClock, Unlock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Product, CartItem, Category, TableOrder, DiningTable, ActivePromo, QueuedOrder } from "./posTypes";
@@ -19,7 +19,7 @@ import type { Product, CartItem, Category, TableOrder, DiningTable, ActivePromo,
 interface Session  { id: number; opening_cash: number; opened_at: string; status: string; }
 interface Branch   { id: number; name: string; business_type: string; feature_flags: Record<string, boolean>; }
 interface PageProps {
-    auth: { user: { fname: string; lname: string; role_label: string; is_cashier: boolean } | null };
+    auth: { user: { fname: string; lname: string; role_label: string; is_cashier: boolean; cashier_type?: string; can_collect_payments?: boolean } | null };
     settings: {
         allow_discount: boolean; max_discount_percent: number;
         default_payment: string; vat_enabled: boolean;
@@ -35,11 +35,14 @@ interface PageProps {
     open_table_orders: TableOrder[];
     dining_tables: DiningTable[];
     preferred_layout: string;
+    cashier_type?: string;
+    can_collect_payments?: boolean;
+    pending_orders?: QueuedOrder[];
     promos: ActivePromo[];
     [key: string]: unknown;
 }
 type PayMethod   = "cash" | "gcash" | "card" | "others" | "installment";
-type LayoutMode  = "grid" | "tablet" | "grocery" | "restaurant" | "cafe" | "salon" | "kiosk" | "mobile";
+type LayoutMode  = "grid" | "tablet" | "grocery" | "restaurant" | "cafe" | "salon" | "kiosk" | "mobile" | "order_only" | "fast_cashier";
 
 const METHODS: { value: PayMethod; label: string; icon: React.ElementType }[] = [
     { value: "cash",        label: "Cash",        icon: Banknote    },
@@ -120,20 +123,28 @@ function VariantPicker({ product, currency, onSelect, onClose }: {
                     <button onClick={onClose} className="shrink-0 p-1 rounded-md hover:bg-muted text-muted-foreground"><X className="h-4 w-4" /></button>
                 </div>
                 <div className="p-4 grid grid-cols-2 gap-2 max-h-72 overflow-y-auto">
-                    <button onClick={() => onSelect(null, null)}
-                        className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border bg-background hover:border-primary/50 hover:bg-primary/5 transition-all text-left">
+                    <button
+                        onClick={() => onSelect(null, null)}
+                        disabled={(product.base_stock ?? product.stock) <= 0}
+                        className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border bg-background hover:border-primary/50 hover:bg-primary/5 transition-all text-left disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:bg-background"
+                    >
                         <span className="text-sm font-semibold text-foreground">Base</span>
                         <span className="text-xs text-muted-foreground">{fmtMoney(product.price, currency)}</span>
                     </button>
-                    {product.variants.filter(v => v.is_available).map(v => (
-                        <button key={v.id} onClick={() => onSelect(v.id, v.name)}
-                            className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border bg-background hover:border-primary/50 hover:bg-primary/5 transition-all text-left">
+                    {product.variants.filter(v => v.is_available).map(v => {
+                        const disabled = (v.stock ?? 0) <= 0 || !!v.is_expired;
+                        const price = v.price ?? product.price + v.extra_price;
+
+                        return (
+                        <button key={v.id} onClick={() => onSelect(v.id, v.name)} disabled={disabled}
+                            className="flex flex-col items-start gap-1 p-3 rounded-xl border border-border bg-background hover:border-primary/50 hover:bg-primary/5 transition-all text-left disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:bg-background">
                             <span className="text-sm font-semibold text-foreground">{v.name}</span>
                             <span className="text-xs text-muted-foreground">
-                                {v.extra_price > 0 ? `+${fmtMoney(v.extra_price, currency)}` : fmtMoney(product.price, currency)}
+                                {fmtMoney(price, currency)}{disabled ? " · unavailable" : ""}
                             </span>
                         </button>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
         </div>
@@ -549,7 +560,7 @@ function PaymentModal({ subtotal, settings, currency, customerNameRequired, prom
                                     Record {instProvider === "home_credit" ? "Home Credit" : instProvider === "skyro" ? "Skyro" : "Financing"}
                                     {downN > 0 ? ` · DP ${fmtMoney(downN, currency)}` : " · No DP"}
                                   </>
-                                : <><Zap className="h-4 w-4" />Charge {fmtMoney(total, currency)}</>
+                                : <><Zap className="h-4 w-4" />Checkout {fmtMoney(total, currency)}</>
                         )}
                     </Button>
                 </div>
@@ -663,7 +674,7 @@ function QueuedOrderModal({ order, currency, onClose }: {
                             <span>Total</span>
                             <span>{fmtMoney(order.total, currency)}</span>
                         </div>
-                        <p className="mt-3 text-center text-[10px] uppercase tracking-wide">Present this to the main cashier</p>
+                        <p className="mt-3 text-center text-[10px] uppercase tracking-wide">Present this for payment</p>
                     </div>
                 </div>
                 <div className="px-4 pb-5 pt-3 border-t border-border shrink-0 print:hidden grid grid-cols-2 gap-2">
@@ -677,9 +688,104 @@ function QueuedOrderModal({ order, currency, onClose }: {
     );
 }
 
-function CartPanel({ cart, subtotal, itemCount, currency, error, canCharge, onUpdateQty, onRemove, onClear, onCharge, onQueue }: {
+function OpenSessionModal({ currency, onClose }: { currency: string; onClose: () => void }) {
+    const amountRef = useRef<HTMLInputElement>(null);
+    const [amount, setAmount] = useState(() => localStorage.getItem("pos:lastOpeningCash") ?? "0");
+    const [notes, setNotes] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
+    const openingCash = Math.max(0, parseFloat(amount) || 0);
+
+    useEffect(() => {
+        setTimeout(() => {
+            amountRef.current?.focus();
+            amountRef.current?.select();
+        }, 50);
+    }, []);
+
+    const openSession = () => {
+        setLoading(true);
+        setError("");
+        router.post(routes.cashSessions.open(), {
+            opening_cash: openingCash,
+            notes: notes.trim() || null,
+        }, {
+            preserveScroll: true,
+            onSuccess: () => {
+                localStorage.setItem("pos:lastOpeningCash", String(openingCash));
+                setLoading(false);
+                onClose();
+                router.reload({ only: ["session"] });
+            },
+            onError: errors => {
+                setError(Object.values(errors)[0] as string ?? "Unable to start cash session.");
+                setLoading(false);
+            },
+        });
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/45 backdrop-blur-sm">
+            <div className="bg-card border border-border rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm shadow-2xl">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+                    <div>
+                        <p className="font-bold text-foreground flex items-center gap-2">
+                            <Unlock className="h-4 w-4 text-emerald-500" /> Start Cash Session
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Enter drawer opening cash.</p>
+                    </div>
+                    <button onClick={onClose} className="p-1 rounded-md hover:bg-muted text-muted-foreground"><X className="h-4 w-4" /></button>
+                </div>
+                <div className="p-5 space-y-4">
+                    <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1.5">Opening cash</label>
+                        <input
+                            ref={amountRef}
+                            value={amount}
+                            onChange={e => setAmount(e.target.value)}
+                            inputMode="decimal"
+                            className="w-full h-12 rounded-xl border border-border bg-background px-3 text-xl font-black tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                        {[0, 500, 1000, 2000].map(value => (
+                            <button key={value} type="button" onClick={() => setAmount(String(value))}
+                                className="h-9 rounded-lg border border-border text-xs font-bold hover:bg-muted">
+                                {value === 0 ? "Zero" : fmtMoney(value, currency)}
+                            </button>
+                        ))}
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-muted-foreground mb-1.5">Notes</label>
+                        <textarea
+                            value={notes}
+                            onChange={e => setNotes(e.target.value)}
+                            rows={2}
+                            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                            placeholder="Optional"
+                        />
+                    </div>
+                    {error && (
+                        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />{error}
+                        </div>
+                    )}
+                </div>
+                <div className="px-5 pb-5 grid grid-cols-2 gap-2">
+                    <Button variant="outline" className="h-11 font-bold" onClick={onClose} disabled={loading}>Cancel</Button>
+                    <Button className="h-11 font-bold gap-2" onClick={openSession} disabled={loading}>
+                        {loading ? <span className="h-4 w-4 rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground animate-spin" /> : <Unlock className="h-4 w-4" />}
+                        Start
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function CartPanel({ cart, subtotal, itemCount, currency, error, canCharge, orderOnly, onUpdateQty, onRemove, onClear, onCharge, onQueue }: {
     cart: CartItem[]; subtotal: number; itemCount: number; currency: string;
-    error: string | null; canCharge: boolean; onUpdateQty: (key: string, d: number) => void;
+    error: string | null; canCharge: boolean; orderOnly?: boolean; onUpdateQty: (key: string, d: number) => void;
     onRemove: (key: string) => void; onClear: () => void; onCharge: () => void; onQueue: () => void;
 }) {
     return (
@@ -750,14 +856,15 @@ function CartPanel({ cart, subtotal, itemCount, currency, error, canCharge, onUp
                             <p className="text-2xl font-bold tabular-nums text-foreground">{fmtMoney(subtotal, currency)}</p>
                         </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <Button variant="outline" className="h-12 text-sm font-bold gap-2" onClick={onQueue}>
-                            <QrCode className="h-4 w-4" />Print QR
+                    {orderOnly ? (
+                        <Button variant="outline" className="h-12 w-full text-sm font-bold gap-2" onClick={onQueue}>
+                            <QrCode className="h-4 w-4" />PRINT QR
                         </Button>
-                        <Button className="h-12 text-sm font-bold gap-2" onClick={onCharge} disabled={!canCharge}>
-                            <Zap className="h-4 w-4" />Charge
+                    ) : (
+                        <Button className="h-12 w-full text-sm font-bold gap-2" onClick={onCharge} disabled={!canCharge}>
+                            <Zap className="h-4 w-4" />Checkout
                         </Button>
-                    </div>
+                    )}
                     {error && (
                         <div className="flex items-center gap-2 p-2.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs">
                             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />{error}
@@ -765,6 +872,296 @@ function CartPanel({ cart, subtotal, itemCount, currency, error, canCharge, onUp
                     )}
                 </div>
             )}
+        </div>
+    );
+}
+
+function FastCashierLayout({ cart, subtotal, itemCount, currency, settings, error, loading, canCollectPayments, sessionBlocked, onUpdateQty, onRemove, onClear, onCheckout, onQueue, onStartSession }: {
+    cart: CartItem[];
+    subtotal: number;
+    itemCount: number;
+    currency: string;
+    settings: PageProps["settings"];
+    error: string | null;
+    loading: boolean;
+    canCollectPayments: boolean;
+    sessionBlocked: boolean;
+    onUpdateQty: (key: string, delta: number) => void;
+    onRemove: (key: string) => void;
+    onClear: () => void;
+    onCheckout: (data: { payment_method: PayMethod; payment_amount: number; discount_percent: number; customer_name: string }) => void;
+    onQueue: () => void;
+    onStartSession: () => void;
+}) {
+    const [method, setMethod] = useState<PayMethod>((settings?.default_payment ?? "cash") as PayMethod);
+    const [tender, setTender] = useState("");
+    const [discount, setDiscount] = useState("");
+    const [customer, setCustomer] = useState("");
+
+    const maxDiscount = settings?.max_discount_percent ?? 100;
+    const discountPct = Math.min(Math.max(parseFloat(discount) || 0, 0), maxDiscount);
+    const discountAmount = Math.round((subtotal * discountPct / 100) * 100) / 100;
+    const afterDiscount = Math.max(0, Math.round((subtotal - discountAmount) * 100) / 100);
+    const vatRate = settings?.vat_enabled && !settings?.vat_inclusive ? settings.vat_rate ?? 0 : 0;
+    const vatAmount = Math.round((afterDiscount * vatRate / 100) * 100) / 100;
+    const total = Math.round((afterDiscount + vatAmount) * 100) / 100;
+    const tenderAmount = method === "cash" ? parseFloat(tender) || 0 : total;
+    const change = Math.max(0, tenderAmount - total);
+    const canCheckout = cart.length > 0 && canCollectPayments && !loading && (method !== "cash" || tenderAmount >= total);
+
+    const appendTender = (value: string) => setTender(prev => value === "." && prev.includes(".") ? prev : (prev === "0" ? value : prev + value));
+    const clearTender = () => setTender("");
+    const backspaceTender = () => setTender(prev => prev.slice(0, -1));
+    const roundTo = (step: number) => Math.ceil(total / step) * step;
+    const suggested = Array.from(new Set([total, roundTo(50), roundTo(100), roundTo(500)].filter(v => v >= total))).slice(0, 4);
+
+    const submit = () => {
+        if (!canCollectPayments) {
+            onQueue();
+            return;
+        }
+        if (sessionBlocked) {
+            onStartSession();
+            return;
+        }
+        onCheckout({
+            payment_method: method,
+            payment_amount: method === "cash" ? tenderAmount : total,
+            discount_percent: discountPct,
+            customer_name: customer.trim(),
+        });
+    };
+
+    return (
+        <div className="grid h-full min-h-0 grid-cols-1 grid-rows-[minmax(160px,1fr)_minmax(300px,1fr)] overflow-hidden bg-background lg:grid-cols-[minmax(420px,1fr)_minmax(340px,430px)] lg:grid-rows-1 xl:grid-cols-[minmax(520px,1fr)_440px]">
+            <div className="min-h-0 flex flex-col border-b border-border bg-card lg:border-b-0 lg:border-r">
+                <div className="shrink-0 px-4 py-3 border-b border-border">
+                    <div className="flex items-center justify-between gap-2">
+                        <div>
+                            <p className="text-sm font-black text-foreground">Order Cart</p>
+                            <p className="text-xs text-muted-foreground">{itemCount} item{itemCount !== 1 ? "s" : ""} in current order</p>
+                        </div>
+                        {cart.length > 0 && (
+                            <button type="button" onClick={onClear} className="h-8 px-2.5 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:bg-muted">
+                                Clear
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+                    {cart.length === 0 ? (
+                        <div className="h-full min-h-40 flex flex-col items-center justify-center text-center text-muted-foreground">
+                            <ShoppingCart className="h-11 w-11 opacity-20 mb-2" />
+                            <p className="text-sm font-bold">Order cart is empty</p>
+                            <p className="mt-1 max-w-xs text-xs">Search or scan a product above, then choose one of the suggested items.</p>
+                        </div>
+                    ) : (
+                        cart.map(item => (
+                            <div key={item.key} className="flex items-center gap-2 py-3 border-b border-border/60 last:border-0">
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-black text-foreground truncate">{item.name}</p>
+                                    {item.variant_name && <p className="text-[10px] text-muted-foreground">{item.variant_name}</p>}
+                                    <p className="text-xs font-semibold text-primary tabular-nums">{fmtMoney(item.price, currency)}</p>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <button type="button" onClick={() => onUpdateQty(item.key, -1)} className="h-8 w-8 rounded-lg border border-border font-black hover:bg-muted">-</button>
+                                    <span className="w-8 text-center text-sm font-black tabular-nums">{item.qty}</span>
+                                    <button type="button" onClick={() => onUpdateQty(item.key, 1)} disabled={item.qty >= item.stock} className="h-8 w-8 rounded-lg border border-border font-black hover:bg-muted disabled:opacity-30">+</button>
+                                </div>
+                                <div className="w-20 text-right">
+                                    <p className="text-sm font-black tabular-nums text-foreground">{fmtMoney(item.price * item.qty, currency)}</p>
+                                    <button type="button" onClick={() => onRemove(item.key)} className="text-[10px] font-semibold text-destructive">Remove</button>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+                <div className="shrink-0 border-t border-border bg-background/70 p-3">
+                    <div className="grid grid-cols-3 gap-2 text-sm">
+                        <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Items</p>
+                            <p className="text-lg font-black tabular-nums text-foreground">{itemCount}</p>
+                        </div>
+                        <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Lines</p>
+                            <p className="text-lg font-black tabular-nums text-foreground">{cart.length}</p>
+                        </div>
+                        <div className="rounded-lg border border-border bg-card px-3 py-2 text-right">
+                            <p className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Subtotal</p>
+                            <p className="text-lg font-black tabular-nums text-primary">{fmtMoney(subtotal, currency)}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="min-h-0 flex flex-col bg-card">
+                <div className="shrink-0 border-b border-border px-4 py-3">
+                    <p className="text-sm font-black text-foreground">Payment</p>
+                    <p className="text-xs text-muted-foreground">Discount, tender, and checkout stay visible.</p>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                        {METHODS.filter(m => m.value !== "installment").map(({ value, label, icon: Icon }) => (
+                            <button
+                                key={value}
+                                type="button"
+                                onClick={() => setMethod(value)}
+                                className={cn(
+                                    "h-10 rounded-lg border text-xs font-black flex items-center justify-center gap-1.5",
+                                    method === value ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background hover:bg-muted",
+                                )}
+                            >
+                                <Icon className="h-3.5 w-3.5" />
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="grid grid-cols-[1fr_92px] gap-2">
+                        <div>
+                            <label className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Customer</label>
+                            <input value={customer} onChange={e => setCustomer(e.target.value)} className="mt-1 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary" placeholder="Optional" />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Disc %</label>
+                            <input value={discount} onChange={e => setDiscount(e.target.value)} inputMode="decimal" className="mt-1 h-10 w-full rounded-lg border border-border bg-background px-2 text-sm font-black tabular-nums focus:outline-none focus:ring-1 focus:ring-primary" placeholder="0" />
+                        </div>
+                    </div>
+
+                    {method === "cash" && (
+                        <div className="space-y-2">
+                            <div>
+                                <label className="text-[10px] font-black uppercase tracking-wide text-muted-foreground">Amount received</label>
+                                <div className="mt-1 h-12 rounded-lg border border-border bg-background px-3 flex items-center justify-end text-2xl font-black tabular-nums text-foreground">
+                                    {tender ? fmtMoney(tenderAmount, currency) : fmtMoney(0, currency)}
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-4 gap-1.5">
+                                {suggested.map(value => (
+                                    <button key={value} type="button" onClick={() => setTender(String(value))} className="h-8 rounded-lg border border-border text-[11px] font-black hover:bg-muted">
+                                        {value === total ? "Exact" : fmtMoney(value, currency)}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="grid grid-cols-4 gap-1.5">
+                                {["7","8","9","C","4","5","6","Back","1","2","3",".","00","0","000","Exact"].map(key => (
+                                    <button
+                                        key={key}
+                                        type="button"
+                                        onClick={() => {
+                                            if (key === "C") clearTender();
+                                            else if (key === "Back") backspaceTender();
+                                            else if (key === "Exact") setTender(String(total));
+                                            else appendTender(key);
+                                        }}
+                                        className={cn("h-10 rounded-lg border border-border text-sm font-black hover:bg-muted", key === "Exact" && "bg-primary text-primary-foreground border-primary hover:bg-primary/90")}
+                                    >
+                                        {key}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="space-y-1.5 rounded-lg bg-muted/40 p-3 text-sm">
+                        <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span>{fmtMoney(subtotal, currency)}</span></div>
+                        {discountAmount > 0 && <div className="flex justify-between text-emerald-600"><span>Discount</span><span>-{fmtMoney(discountAmount, currency)}</span></div>}
+                        {vatAmount > 0 && <div className="flex justify-between text-muted-foreground"><span>VAT</span><span>{fmtMoney(vatAmount, currency)}</span></div>}
+                        <div className="flex justify-between border-t border-border/70 pt-2 text-lg font-black text-foreground"><span>Total</span><span>{fmtMoney(total, currency)}</span></div>
+                        {method === "cash" && <div className="flex justify-between text-base font-black text-primary"><span>Change</span><span>{fmtMoney(change, currency)}</span></div>}
+                    </div>
+
+                    {error && (
+                        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />{error}
+                        </div>
+                    )}
+
+                </div>
+                <div className="shrink-0 border-t border-border bg-card p-3 sm:p-4">
+                    <Button className="h-14 w-full text-base font-black gap-2" disabled={!cart.length || (!canCheckout && !sessionBlocked && canCollectPayments)} onClick={submit}>
+                        {loading ? <span className="h-4 w-4 rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground animate-spin" /> : sessionBlocked ? <Unlock className="h-5 w-5" /> : <Zap className="h-5 w-5" />}
+                        {!canCollectPayments ? "PRINT QR" : sessionBlocked ? "Start Session" : `Checkout ${fmtMoney(total, currency)}`}
+                    </Button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function PendingPaymentModal({ orders, currency, activeOrderId, onSelect, onDelete, onClose }: {
+    orders: QueuedOrder[];
+    currency: string;
+    activeOrderId: number | null;
+    onSelect: (order: QueuedOrder) => void;
+    onDelete: (order: QueuedOrder) => void;
+    onClose: () => void;
+}) {
+    return (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/45 backdrop-blur-sm">
+        <div className="bg-card border border-border rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg shadow-2xl flex flex-col max-h-[86vh]">
+            <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-border">
+                <div className="flex items-center gap-2 min-w-0">
+                    <QrCode className="h-4 w-4 text-primary shrink-0" />
+                    <span className="text-sm font-bold truncate">Pending Payment</span>
+                    <span className="bg-primary text-primary-foreground text-[10px] font-bold rounded-full h-4 min-w-[16px] flex items-center justify-center px-1">
+                        {orders.length}
+                    </span>
+                </div>
+                <button onClick={onClose} className="p-1 rounded-md hover:bg-muted text-muted-foreground">
+                    <X className="h-4 w-4" />
+                </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+                {orders.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-48 px-4 text-center text-muted-foreground">
+                        <QrCode className="h-7 w-7 opacity-20 mb-2" />
+                        <p className="text-xs font-medium">No pending orders</p>
+                    </div>
+                ) : (
+                    <div className="p-2 space-y-1.5">
+                        {orders.map(order => {
+                            const active = activeOrderId === order.id;
+
+                            return (
+                                <div
+                                    key={order.id}
+                                    className={cn(
+                                        "relative w-full text-left rounded-lg border px-3 py-2.5 pr-9 transition-colors",
+                                        active
+                                            ? "border-primary bg-primary/8"
+                                            : "border-border bg-background hover:bg-muted/50 hover:border-primary/30",
+                                    )}
+                                >
+                                    <button
+                                        type="button"
+                                        onClick={() => onDelete(order)}
+                                        className="absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full border border-border bg-card text-muted-foreground shadow-sm hover:border-destructive/40 hover:bg-destructive hover:text-destructive-foreground"
+                                        title="Remove pending order"
+                                    >
+                                        <X className="h-3.5 w-3.5" />
+                                    </button>
+                                    <div className="flex items-start justify-between gap-2">
+                                        <button type="button" onClick={() => onSelect(order)} className="min-w-0 flex-1 text-left">
+                                            <p className="text-xs font-black text-foreground font-mono truncate">{order.ticket_number}</p>
+                                            <p className="text-[11px] text-muted-foreground truncate mt-0.5">{order.listed_by ?? "Order taker"}</p>
+                                        </button>
+                                        <p className="shrink-0 text-xs font-black text-primary tabular-nums">{fmtMoney(order.total, currency)}</p>
+                                    </div>
+                                    <div className="mt-2 flex items-center justify-between gap-2">
+                                        <span className="text-[10px] text-muted-foreground">{order.items.length} line{order.items.length !== 1 ? "s" : ""}</span>
+                                        <button type="button" onClick={() => onSelect(order)} className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">
+                                            Select
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        </div>
         </div>
     );
 }
@@ -777,11 +1174,17 @@ export default function PosIndex() {
     const user        = props.auth?.user;
     const currency    = app?.currency ?? "₱";
     const layout      = (props.preferred_layout ?? "grid") as LayoutMode;
+    const pendingOrders = (props.pending_orders as QueuedOrder[]) ?? [];
+    const isOrderTaker = (props.cashier_type ?? user?.cashier_type) === "order_taker";
+    const canCollectPayments = props.can_collect_payments ?? user?.can_collect_payments ?? !isOrderTaker;
+    const isOrderOnly = layout === "order_only" || !canCollectPayments;
 
     const [cart,               setCart]               = useState<CartItem[]>([]);
     const [search,             setSearch]             = useState("");
     const [activeCat,          setActiveCat]          = useState<number | null>(null);
     const [showPayment,        setShowPayment]        = useState(false);
+    const [showPendingPayments,setShowPendingPayments]= useState(false);
+    const [showOpenSession,    setShowOpenSession]    = useState(false);
     const [receipt,            setReceipt]            = useState<ReceiptData | null>(null);
     const [queuedOrder,        setQueuedOrder]        = useState<QueuedOrder | null>(null);
     const [activeQueuedOrder,  setActiveQueuedOrder]  = useState<QueuedOrder | null>(null);
@@ -830,16 +1233,25 @@ export default function PosIndex() {
         return list;
     }, [products, activeCat, search]);
 
+    const fastSearchSuggestions = useMemo(() => {
+        if (!search.trim()) return [];
+        return filtered.slice(0, 10);
+    }, [filtered, search]);
+
     const subtotal  = useMemo(() => cart.reduce((s, i) => s + i.price * i.qty, 0), [cart]);
     const itemCount = useMemo(() => cart.reduce((s, i) => s + i.qty, 0), [cart]);
 
     const requireCustomerName = branch?.business_type === "salon";
 
     const addItem = useCallback((product: Product, variantId: number | null = null, variantName: string | null = null) => {
-        const extra     = variantId ? (product.variants.find(v => v.id === variantId)?.extra_price ?? 0) : 0;
-        const price     = product.price + extra;
+        const variant   = variantId ? product.variants.find(v => v.id === variantId) : null;
+        const extra     = variant?.extra_price ?? 0;
+        const price     = variant?.price ?? product.price + extra;
         const key       = `${product.id}-${variantId ?? "base"}`;
-        const stockLim  = (product.product_type === 'bundle' || product.product_type === 'made_to_order') ? 999 : product.stock;
+        const stockLim  = (product.product_type === 'bundle' || product.product_type === 'made_to_order')
+            ? 999
+            : (variant ? (variant.stock ?? 0) : (product.base_stock ?? product.stock));
+        if (stockLim <= 0) return;
         setCart(prev => {
             const ex = prev.find(i => i.key === key);
             if (ex) {
@@ -863,9 +1275,32 @@ export default function PosIndex() {
         refocus();
     }, [addItem, refocus]);
 
-    const loadQueuedOrder = useCallback(async (token: string) => {
+    const normalizePendingPaymentScan = useCallback((value: string) => {
+        const raw = value.trim();
+        if (!raw) return "";
+
         try {
-            const res = await fetch(`/pos/queued-orders/${encodeURIComponent(token)}`, {
+            const parsed = new URL(raw);
+            const pathToken = parsed.pathname.split("/").filter(Boolean).pop();
+            return (parsed.searchParams.get("token") || parsed.searchParams.get("qr") || pathToken || raw)
+                .trim()
+                .toUpperCase();
+        } catch {
+            const maybePathToken = raw.split(/[/?#]/).filter(Boolean).pop() ?? raw;
+            return maybePathToken.trim().toUpperCase();
+        }
+    }, []);
+
+    const looksLikePendingPaymentCode = useCallback((value: string) => {
+        const code = normalizePendingPaymentScan(value);
+        return /^[A-Z0-9]{8,20}$/.test(code) || /^Q\d{6}-\d{4,}$/.test(code);
+    }, [normalizePendingPaymentScan]);
+
+    const loadQueuedOrder = useCallback(async (token: string) => {
+        const lookup = normalizePendingPaymentScan(token);
+        if (!lookup) return false;
+        try {
+            const res = await fetch(`/pos/queued-orders/${encodeURIComponent(lookup)}`, {
                 headers: { "Accept": "application/json" },
             });
             if (!res.ok) return false;
@@ -887,12 +1322,36 @@ export default function PosIndex() {
             })));
             setError(null);
             setSearch("");
+            setShowPendingPayments(false);
             refocus(50);
             return true;
         } catch {
             return false;
         }
-    }, [refocus]);
+    }, [normalizePendingPaymentScan, refocus]);
+
+    const selectPendingOrder = useCallback((order: QueuedOrder) => {
+        void loadQueuedOrder(order.qr_token);
+    }, [loadQueuedOrder]);
+
+    const deletePendingOrder = useCallback((order: QueuedOrder) => {
+        if (! window.confirm(`Remove pending order ${order.ticket_number}?`)) return;
+
+        router.delete(`/pos/queued-orders/${order.id}`, {
+            preserveScroll: true,
+            onSuccess: () => {
+                if (activeQueuedOrder?.id === order.id) {
+                    setActiveQueuedOrder(null);
+                    setCart([]);
+                }
+                router.reload({ only: ["pending_orders"] });
+                refocus(50);
+            },
+            onError: errors => {
+                setError(Object.values(errors)[0] as string ?? "Unable to remove pending order.");
+            },
+        });
+    }, [activeQueuedOrder, refocus]);
 
     // Combined search + instant barcode: if the current value exactly matches a barcode, add it
     const handleSearchOrScan = useCallback((value: string) => {
@@ -905,8 +1364,8 @@ export default function PosIndex() {
             setSearch("");
             return;
         }
-        if (/^[A-Z0-9]{8,20}$/i.test(code)) void loadQueuedOrder(code.toUpperCase());
-    }, [products, handleProductClick, loadQueuedOrder]);
+        if (canCollectPayments && looksLikePendingPaymentCode(code)) void loadQueuedOrder(code);
+    }, [products, handleProductClick, loadQueuedOrder, canCollectPayments, looksLikePendingPaymentCode]);
 
     // Enter key: 1) exact barcode match, 2) exact name match, 3) single filtered result
     const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -926,8 +1385,8 @@ export default function PosIndex() {
 
         // Priority 3: only one result in the filtered list → treat as unambiguous
         if (filtered.length === 1) { handleProductClick(filtered[0]); setSearch(""); }
-        else if (/^[A-Z0-9]{8,20}$/i.test(code)) void loadQueuedOrder(code.toUpperCase());
-    }, [search, products, filtered, handleProductClick, loadQueuedOrder]);
+        else if (canCollectPayments && looksLikePendingPaymentCode(code)) void loadQueuedOrder(code);
+    }, [search, products, filtered, handleProductClick, loadQueuedOrder, canCollectPayments, looksLikePendingPaymentCode]);
 
     const updateQty    = (key: string, delta: number) =>
         setCart(prev => prev.flatMap(i => {
@@ -1022,6 +1481,8 @@ export default function PosIndex() {
                     notes: [payData.discount_percent > 0 ? `Discount ${payData.discount_percent}%` : null, r.promo_name ? `Promo: ${r.promo_name}` : null].filter(Boolean).join(' | ') || null,
                     created_at:      new Date().toISOString(),
                     cashier:         user ? `${user.fname} ${user.lname}` : "—",
+                    order_created_by: activeQueuedOrder?.listed_by ?? (user ? `${user.fname} ${user.lname}` : "—"),
+                    payment_received_by: user ? `${user.fname} ${user.lname}` : "—",
                     branch_name:     branch?.name,
                     table_label:     activeOrder?.label ?? null,
                     business_type:   branch?.business_type,
@@ -1045,12 +1506,12 @@ export default function PosIndex() {
     useEffect(() => {
         const fn = (e: KeyboardEvent) => {
             if (e.key === "F2" || e.key === "F5") { e.preventDefault(); searchRef.current?.focus(); }
-            if (e.key === "F9" && cart.length)    { e.preventDefault(); setShowPayment(true); }
-            if (e.key === "Escape")               { setShowPayment(false); setVariantFor(null); }
+            if (e.key === "F9" && cart.length)    { e.preventDefault(); canCollectPayments ? startCharge() : handleQueue(); }
+            if (e.key === "Escape")               { setShowPayment(false); setShowPendingPayments(false); setShowOpenSession(false); setVariantFor(null); }
         };
         window.addEventListener("keydown", fn);
         return () => window.removeEventListener("keydown", fn);
-    }, [cart]);
+    }, [cart, canCollectPayments, handleQueue]);
 
     // ── Combined search/barcode input ─────────────────────────────────────────
     const searchInput = (
@@ -1077,12 +1538,34 @@ export default function PosIndex() {
         </div>
     );
 
+    const pendingPaymentButton = canCollectPayments ? (
+        <button
+            type="button"
+            onClick={() => setShowPendingPayments(true)}
+            className="relative flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+            title="Pending payments"
+        >
+            <QrCode className="h-3.5 w-3.5" />
+            <span className="hidden sm:block">Pending</span>
+            {pendingOrders.length > 0 && (
+                <span className="absolute -right-1.5 -top-1.5 h-4 min-w-4 rounded-full bg-primary px-1 text-[10px] font-black leading-4 text-primary-foreground">
+                    {pendingOrders.length}
+                </span>
+            )}
+        </button>
+    ) : null;
+
     // ── Session guard ─────────────────────────────────────────────────────────
     const sessionRequired = settings?.require_cash_session ?? true;
-    const sessionBlocked  = sessionRequired && !session;
+    const sessionBlocked  = canCollectPayments && sessionRequired && !session;
     const startCharge = () => {
+        if (!canCollectPayments) {
+            setError("Order takers can only send orders to Pending Payment. A counter cashier must collect payment.");
+            return;
+        }
         if (sessionBlocked) {
-            setError("This station has no open cash session. Print a QR ticket for the main cashier instead.");
+            setError("Start a cash session before checkout.");
+            setShowOpenSession(true);
             return;
         }
         setError(null);
@@ -1170,6 +1653,9 @@ export default function PosIndex() {
                         onClose={() => { setShowPayment(false); setError(null); refocus(50); }}
                         loading={loading} serverError={error} />
                 )}
+                {showOpenSession && (
+                    <OpenSessionModal currency={currency} onClose={() => { setShowOpenSession(false); refocus(50); }} />
+                )}
                 {receipt && <SaleSuccessModal receipt={receipt} currency={currency} installmentPlanId={installmentPlanId} onNewSale={() => { setReceipt(null); setInstallmentPlanId(null); refocus(100); }} />}
                 {queuedOrder && <QueuedOrderModal order={queuedOrder} currency={currency} onClose={() => { setQueuedOrder(null); refocus(100); }} />}
             </div>
@@ -1191,13 +1677,25 @@ export default function PosIndex() {
                             className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0">
                             <History className="h-3.5 w-3.5" />
                         </a>
+                        {pendingPaymentButton}
+                        {sessionBlocked && (
+                            <button
+                                type="button"
+                                onClick={() => setShowOpenSession(true)}
+                                className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors shrink-0"
+                            >
+                                <Unlock className="h-3.5 w-3.5" />
+                                <span className="hidden sm:block">Start Session</span>
+                            </button>
+                        )}
                     </div>
                     <div className="flex-1 min-h-0 overflow-hidden">
                         <Suspense fallback={<LayoutSpinner />}>
                             <MobileLayout filtered={filtered} cart={cart} currency={currency} onProductClick={handleProductClick}
-                                onCharge={startCharge}
+                                onCharge={startCharge} onQueue={handleQueue}
                                 subtotal={subtotal} itemCount={itemCount} onClear={clearCart}
-                                onUpdateQty={updateQty} onRemove={removeItem} />
+                                onUpdateQty={updateQty} onRemove={removeItem}
+                                orderOnly={isOrderOnly} canCharge={canCollectPayments} />
                         </Suspense>
                     </div>
                 </div>
@@ -1214,13 +1712,176 @@ export default function PosIndex() {
                         onClose={() => { setShowPayment(false); setError(null); refocus(50); }}
                         loading={loading} serverError={error} />
                 )}
-                {receipt && <SaleSuccessModal receipt={receipt} currency={currency} installmentPlanId={installmentPlanId} onNewSale={() => { setReceipt(null); setInstallmentPlanId(null); refocus(100); }} />}
+                {showOpenSession && (
+                    <OpenSessionModal currency={currency} onClose={() => { setShowOpenSession(false); refocus(50); }} />
+                )}
+                {showPendingPayments && (
+                        <PendingPaymentModal
+                            orders={pendingOrders}
+                            currency={currency}
+                            activeOrderId={activeQueuedOrder?.id ?? null}
+                            onSelect={selectPendingOrder}
+                            onDelete={deletePendingOrder}
+                            onClose={() => { setShowPendingPayments(false); refocus(50); }}
+                        />
+                    )}
+                    {receipt && <SaleSuccessModal receipt={receipt} currency={currency} installmentPlanId={installmentPlanId} onNewSale={() => { setReceipt(null); setInstallmentPlanId(null); refocus(100); }} />}
                 {queuedOrder && <QueuedOrderModal order={queuedOrder} currency={currency} onClose={() => { setQueuedOrder(null); refocus(100); }} />}
             </AdminLayout>
         );
     }
 
     // ── Standard layouts ──────────────────────────────────────────────────────
+    if (layout === "fast_cashier") {
+        return (
+            <AdminLayout>
+                <div className={cn(
+                    "relative flex flex-col overflow-hidden",
+                    user?.is_cashier
+                        ? "h-[calc(100dvh-7rem)]"
+                        : "h-[calc(100dvh-4rem)] -m-6"
+                )}>
+                    {noSessionOverlay}
+                    <div className="shrink-0 flex flex-wrap items-center gap-2 px-3 py-2 border-b border-border bg-card sm:px-4">
+                        <div className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0",
+                            isOrderOnly
+                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
+                                : session ? "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400"
+                                          : "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400")}>
+                            <span className={cn("h-1.5 w-1.5 rounded-full", isOrderOnly ? "bg-emerald-500" : session ? "bg-green-500" : "bg-amber-500")} />
+                            {isOrderOnly ? "Order taker" : session ? "Fast cashier" : "No session"}
+                        </div>
+                        <div className="relative order-last w-full flex-[1_1_420px] sm:order-none sm:min-w-[280px]">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                            <input
+                                ref={searchRef}
+                                value={search}
+                                onChange={e => handleSearchOrScan(e.target.value)}
+                                onKeyDown={handleSearchKeyDown}
+                                placeholder="Search or scan product barcode... (F2)"
+                                className="w-full h-10 pl-9 pr-8 text-sm bg-background border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground"
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="none"
+                                spellCheck={false}
+                                data-gramm="false"
+                            />
+                            {search
+                                ? <button onClick={() => { setSearch(""); refocus(); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+                                : <ScanLine className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40 pointer-events-none" />}
+                            {search.trim() && (
+                                <div className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 overflow-hidden rounded-xl border border-border bg-popover shadow-2xl">
+                                    {fastSearchSuggestions.length === 0 ? (
+                                        <div className="px-3 py-4 text-center text-sm text-muted-foreground">No matching products</div>
+                                    ) : (
+                                        <div className="max-h-[min(60dvh,420px)] overflow-y-auto p-1.5">
+                                            {fastSearchSuggestions.map(product => {
+                                                const isBundleMTO = product.product_type === "bundle" || product.product_type === "made_to_order";
+                                                const outStock = !isBundleMTO && product.stock <= 0;
+                                                const inCart = cart.find(item => item.product_id === product.id);
+
+                                                return (
+                                                    <button
+                                                        key={product.id}
+                                                        type="button"
+                                                        disabled={outStock}
+                                                        onClick={() => handleProductClick(product)}
+                                                        className={cn(
+                                                            "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
+                                                            outStock ? "cursor-not-allowed opacity-45" : "hover:bg-muted",
+                                                        )}
+                                                    >
+                                                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                                                            <Package className="h-5 w-5" />
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="truncate text-sm font-black text-foreground">{product.name}</p>
+                                                            <p className="truncate text-xs text-muted-foreground">
+                                                                {product.category?.name ?? "Uncategorized"} - {isBundleMTO ? product.product_type.replace("_", " ") : `${product.stock} stock`}
+                                                            </p>
+                                                        </div>
+                                                        {inCart && (
+                                                            <span className="rounded-full bg-primary/10 px-2 py-1 text-[10px] font-black text-primary">
+                                                                x{inCart.qty}
+                                                            </span>
+                                                        )}
+                                                        <p className="w-24 shrink-0 text-right text-sm font-black tabular-nums text-primary">{fmtMoney(product.price, currency)}</p>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        <div className="shrink-0">
+                            <CategoryDropdown categories={categories} activeCat={activeCat} onChange={setActiveCat} />
+                        </div>
+                        <div className="flex-1" />
+                        <a href={routes.sales.history()}
+                            className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+                            <History className="h-3.5 w-3.5" /><span className="hidden sm:block">History</span>
+                        </a>
+                        {pendingPaymentButton}
+                        {sessionBlocked && (
+                            <button type="button" onClick={() => setShowOpenSession(true)}
+                                className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors">
+                                <Unlock className="h-3.5 w-3.5" />
+                                <span className="hidden sm:block">Start Session</span>
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex-1 min-h-0 overflow-hidden">
+                        <FastCashierLayout
+                            cart={cart}
+                            subtotal={subtotal}
+                            itemCount={itemCount}
+                            currency={currency}
+                            settings={settings}
+                            error={error}
+                            loading={loading}
+                            canCollectPayments={canCollectPayments}
+                            sessionBlocked={sessionBlocked}
+                            onUpdateQty={updateQty}
+                            onRemove={removeItem}
+                            onClear={clearCart}
+                            onQueue={handleQueue}
+                            onStartSession={() => setShowOpenSession(true)}
+                            onCheckout={data => handleConfirm({
+                                payment_method: data.payment_method,
+                                payment_amount: data.payment_amount,
+                                customer_name: data.customer_name,
+                                discount_percent: data.discount_percent,
+                                promo_id: null,
+                            })}
+                        />
+                    </div>
+                </div>
+
+                {variantFor && (
+                    <VariantPicker product={variantFor} currency={currency}
+                        onSelect={(vid, vname) => { addItem(variantFor, vid, vname); setVariantFor(null); refocus(50); }}
+                        onClose={() => { setVariantFor(null); refocus(50); }} />
+                )}
+                {showOpenSession && (
+                    <OpenSessionModal currency={currency} onClose={() => { setShowOpenSession(false); refocus(50); }} />
+                )}
+                {showPendingPayments && (
+                    <PendingPaymentModal
+                        orders={pendingOrders}
+                        currency={currency}
+                        activeOrderId={activeQueuedOrder?.id ?? null}
+                        onSelect={selectPendingOrder}
+                        onDelete={deletePendingOrder}
+                        onClose={() => { setShowPendingPayments(false); refocus(50); }}
+                    />
+                )}
+                {receipt && <SaleSuccessModal receipt={receipt} currency={currency} installmentPlanId={installmentPlanId} onNewSale={() => { setReceipt(null); setInstallmentPlanId(null); refocus(100); }} />}
+                {queuedOrder && <QueuedOrderModal order={queuedOrder} currency={currency} onClose={() => { setQueuedOrder(null); refocus(100); }} />}
+            </AdminLayout>
+        );
+    }
+
     return (
         <AdminLayout>
             {/* CashierLayout (bottom-nav): header=3rem + nav=4rem = 7rem chrome, no padding */}
@@ -1235,10 +1896,12 @@ export default function PosIndex() {
                 {/* Top bar with combined search/barcode */}
                 <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-border bg-card">
                     <div className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold shrink-0",
-                        session ? "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400"
-                                : "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400")}>
-                        <span className={cn("h-1.5 w-1.5 rounded-full", session ? "bg-green-500" : "bg-amber-500")} />
-                        {session ? "Session open" : "No session"}
+                        isOrderOnly
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
+                            : session ? "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400"
+                                      : "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400")}>
+                        <span className={cn("h-1.5 w-1.5 rounded-full", isOrderOnly ? "bg-emerald-500" : session ? "bg-green-500" : "bg-amber-500")} />
+                        {isOrderOnly ? "Order taker" : session ? "Counter cashier" : "No session"}
                     </div>
                     <span className="text-sm font-bold text-foreground hidden sm:block truncate max-w-[140px]">{branch?.name ?? "POS"}</span>
                     {branch?.business_type && (
@@ -1257,17 +1920,28 @@ export default function PosIndex() {
                         className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
                         <History className="h-3.5 w-3.5" /><span className="hidden sm:block">History</span>
                     </a>
+                    {pendingPaymentButton}
+                    {sessionBlocked && (
+                        <button
+                            type="button"
+                            onClick={() => setShowOpenSession(true)}
+                            className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors"
+                        >
+                            <Unlock className="h-3.5 w-3.5" />
+                            <span className="hidden sm:block">Start Session</span>
+                        </button>
+                    )}
                     <button onClick={() => window.location.reload()}
                         className="h-8 w-8 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
                         <RefreshCw className="h-3.5 w-3.5" />
                     </button>
                 </div>
 
-                <div className="flex flex-1 overflow-hidden">
-                    <div className="flex-1 flex flex-col overflow-hidden border-r border-border">
+                <div className="flex flex-1 min-h-0 overflow-hidden flex-col lg:flex-row">
+                    <div className="flex-1 flex flex-col overflow-hidden border-b lg:border-b-0 lg:border-r border-border">
                         <div className="flex-1 overflow-y-auto p-3">
                             <Suspense fallback={<LayoutSpinner />}>
-                                {layout === "grid"       && <GridLayout       filtered={filtered} cart={cart} currency={currency} onProductClick={handleProductClick} />}
+                                {(layout === "grid" || layout === "order_only") && <GridLayout filtered={filtered} cart={cart} currency={currency} onProductClick={handleProductClick} />}
                                 {layout === "tablet"     && <TabletLayout     filtered={filtered} cart={cart} currency={currency} onProductClick={handleProductClick} />}
                                 {layout === "grocery"    && <GroceryLayout    filtered={filtered} cart={cart} currency={currency} onProductClick={handleProductClick} />}
                                 {layout === "cafe"       && <CafeLayout       filtered={filtered} allProducts={products} categories={categories} activeCat={activeCat} onCatChange={setActiveCat} cart={cart} currency={currency} onProductClick={handleProductClick} />}
@@ -1278,9 +1952,13 @@ export default function PosIndex() {
                     </div>
 
                     {/* Cart sidebar */}
-                    <div className="shrink-0 flex flex-col border-l border-border w-72 lg:w-80 xl:w-96">
+                    <div className={cn(
+                        "shrink-0 flex flex-col border-t lg:border-t-0 lg:border-l border-border w-full lg:w-80 xl:w-96 min-h-0",
+                        isOrderOnly ? "h-[42%] lg:h-auto xl:w-[26rem]" : "h-[48%] lg:h-auto",
+                    )}>
                         <CartPanel cart={cart} subtotal={subtotal} itemCount={itemCount} currency={currency} error={error}
-                            canCharge={!sessionBlocked}
+                            canCharge={canCollectPayments}
+                            orderOnly={isOrderOnly}
                             onUpdateQty={updateQty} onRemove={removeItem} onClear={clearCart}
                             onCharge={startCharge} onQueue={handleQueue} />
                     </div>
@@ -1298,6 +1976,19 @@ export default function PosIndex() {
                     onConfirm={handleConfirm}
                     onClose={() => { setShowPayment(false); setError(null); refocus(50); }}
                     loading={loading} />
+            )}
+            {showOpenSession && (
+                <OpenSessionModal currency={currency} onClose={() => { setShowOpenSession(false); refocus(50); }} />
+            )}
+            {showPendingPayments && (
+                <PendingPaymentModal
+                    orders={pendingOrders}
+                    currency={currency}
+                    activeOrderId={activeQueuedOrder?.id ?? null}
+                    onSelect={selectPendingOrder}
+                    onDelete={deletePendingOrder}
+                    onClose={() => { setShowPendingPayments(false); refocus(50); }}
+                />
             )}
             {receipt && <SaleSuccessModal receipt={receipt} currency={currency} installmentPlanId={installmentPlanId} onNewSale={() => { setReceipt(null); setInstallmentPlanId(null); refocus(100); }} />}
             {queuedOrder && <QueuedOrderModal order={queuedOrder} currency={currency} onClose={() => { setQueuedOrder(null); refocus(100); }} />}

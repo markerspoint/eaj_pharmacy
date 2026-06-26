@@ -60,7 +60,6 @@ interface Order {
     phone?: string;
     address?: string;
     contact_person?: string;
-    is_campus: boolean;
   } | null;
   items?: OrderItem[];
   can_manage: boolean;

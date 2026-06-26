@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { Head, usePage, router } from "@inertiajs/react";
 import AdminLayout from "@/layouts/AdminLayout";
-import { routes } from "@/routes";
+import { route, routes } from "@/routes";
 import { cn } from "@/lib/utils";
 import {
     Settings, Globe, ShoppingCart, Receipt, Package,
@@ -109,14 +109,18 @@ const sel = inp + " cursor-pointer";
 
 // ─── Logo upload ──────────────────────────────────────────────────────────────
 
-function LogoUpload({ currentValue, branchId }: { currentValue: string; branchId: number | null }) {
+function ImageUpload({ settingKey, currentValue, branchId }: { settingKey: string; currentValue: string; branchId: number | null }) {
     const fileRef = useRef<HTMLInputElement>(null);
     const [uploading, setUploading] = useState(false);
     const [preview, setPreview] = useState<string | null>(null);
     const [cacheBust, setCacheBust] = useState(Date.now());
 
-    const logoRoute = branchId ? route('brand.logo', { branchId }) : route('brand.logo');
-    const logoUrl = preview ?? (currentValue ? `${logoRoute}?v=${cacheBust}` : null);
+    const isIcon = settingKey === "general.app_icon";
+    const brandRoute = branchId
+        ? route(isIcon ? "brand.icon" : "brand.logo", { branchId })
+        : route(isIcon ? "brand.icon" : "brand.logo");
+    const fallbackUrl = isIcon ? "/uploads/ease-icon.png" : "/uploads/ease-logo.png";
+    const imageUrl = preview ?? (currentValue ? `${brandRoute}?v=${cacheBust}` : fallbackUrl);
 
     const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -124,15 +128,16 @@ function LogoUpload({ currentValue, branchId }: { currentValue: string; branchId
         // Show local preview immediately
         setPreview(URL.createObjectURL(file));
         const data = new FormData();
-        data.append("logo", file);
+        data.append(isIcon ? "icon" : "logo", file);
         if (branchId) data.append("branch_id", String(branchId));
         setUploading(true);
-        router.post(routes.settings.logo(), data, {
+        router.post(isIcon ? routes.settings.icon() : routes.settings.logo(), data, {
             forceFormData: true,
             preserveScroll: true,
             onSuccess: () => {
                 setPreview(null);
                 setCacheBust(Date.now());
+                router.reload({ only: ["app", "settings"] });
             },
             onFinish: () => setUploading(false),
         });
@@ -142,15 +147,11 @@ function LogoUpload({ currentValue, branchId }: { currentValue: string; branchId
 
     return (
         <div className="flex items-center gap-3">
-            {logoUrl ? (
-                <div className="h-10 w-10 rounded-lg border border-border overflow-hidden bg-muted/30 flex items-center justify-center shrink-0">
-                    <img src={logoUrl} alt="Logo" className="h-full w-full object-contain" />
-                </div>
-            ) : (
-                <div className="h-10 w-10 rounded-lg border border-dashed border-border bg-muted/30 flex items-center justify-center shrink-0 text-muted-foreground">
-                    <ImageIcon className="h-4 w-4" />
-                </div>
-            )}
+            <div className="h-10 w-10 rounded-lg border border-border overflow-hidden bg-muted/30 flex items-center justify-center shrink-0">
+                {imageUrl
+                    ? <img src={imageUrl} alt={isIcon ? "Tab icon" : "Logo"} className="h-full w-full object-contain" />
+                    : <ImageIcon className="h-4 w-4 text-muted-foreground" />}
+            </div>
             <button
                 type="button"
                 disabled={uploading}
@@ -160,7 +161,7 @@ function LogoUpload({ currentValue, branchId }: { currentValue: string; branchId
                 {uploading
                     ? <span className="h-3 w-3 rounded-full border-2 border-muted-foreground/30 border-t-foreground animate-spin" />
                     : <Upload className="h-3.5 w-3.5" />}
-                {uploading ? "Uploading…" : "Change logo"}
+                {uploading ? "Uploading..." : isIcon ? "Change icon" : "Change logo"}
             </button>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
         </div>
@@ -184,7 +185,7 @@ function SettingRow({ def, value, onChange, onReset, isSuper, branchId }: {
         const resolvedType = def.type || (value === "true" || value === "false" ? "boolean" : "string");
 
         if (resolvedType === "image") {
-            return <LogoUpload currentValue={value} branchId={branchId} />;
+            return <ImageUpload settingKey={def.key} currentValue={value} branchId={branchId} />;
         }
 
         if (resolvedType === "boolean") {

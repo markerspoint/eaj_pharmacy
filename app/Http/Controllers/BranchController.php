@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\Branch;
-use App\Models\Supplier;
 use App\Models\ActivityLog;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
@@ -19,7 +18,6 @@ class BranchController extends Controller
     public function index(): Response
     {
         $branches = Branch::query()
-            ->with('supplier:id,name')
             ->withCount(['users', 'productStocks'])
             ->orderBy('name')
             ->get()
@@ -33,10 +31,6 @@ class BranchController extends Controller
                 'is_active'       => $b->is_active,
                 'business_type'   => $b->business_type,
                 'business_type_label' => $b->business_type_label,
-                'supplier_id'     => $b->supplier_id,
-                'supplier'        => $b->supplier
-                    ? ['id' => $b->supplier->id, 'name' => $b->supplier->name]
-                    : null,
                 'feature_flags'   => $b->feature_flags,
                 // individual flags for the form toggles
                 'use_table_ordering'  => $b->use_table_ordering,
@@ -52,7 +46,6 @@ class BranchController extends Controller
 
         return Inertia::render('Branches/Index', [
             'branches'      => $branches,
-            'suppliers'     => Supplier::orderBy('name')->get(['id', 'name']),
             'businessTypes' => Branch::businessTypes(),
         ]);
     }
@@ -67,7 +60,6 @@ class BranchController extends Controller
             'address'          => ['nullable', 'string', 'max:500'],
             'phone'            => ['nullable', 'string', 'max:50'],
             'contact_person'   => ['nullable', 'string', 'max:255'],
-            'supplier_id'      => ['nullable', 'exists:suppliers,id'],
             'business_type'    => ['required', 'string', Rule::in(array_keys(Branch::businessTypes()))],
             'use_table_ordering'  => ['nullable', 'boolean'],
             'use_variants'        => ['nullable', 'boolean'],
@@ -86,7 +78,6 @@ class BranchController extends Controller
             'address'           => $validated['address']        ?? null,
             'phone'             => $validated['phone']          ?? null,
             'contact_person'    => $validated['contact_person'] ?? null,
-            'supplier_id'       => $validated['supplier_id']    ?? null,
             'business_type'     => $validated['business_type'],
             'use_table_ordering'  => $validated['use_table_ordering']  ?? false,
             'use_variants'        => $validated['use_variants']        ?? false,
@@ -123,7 +114,6 @@ class BranchController extends Controller
             'address'         => ['nullable', 'string', 'max:500'],
             'phone'           => ['nullable', 'string', 'max:50'],
             'contact_person'  => ['nullable', 'string', 'max:255'],
-            'supplier_id'     => ['nullable', 'exists:suppliers,id'],
             'business_type'   => ['required', 'string', Rule::in(array_keys(Branch::businessTypes()))],
             'use_table_ordering'  => ['nullable', 'boolean'],
             'use_variants'        => ['nullable', 'boolean'],
@@ -137,7 +127,7 @@ class BranchController extends Controller
         ]);
 
         $old = $branch->only(['name', 'code', 'address', 'phone', 'contact_person',
-                              'supplier_id', 'business_type', 'use_table_ordering',
+                              'business_type', 'use_table_ordering',
                               'use_variants', 'use_expiry_tracking', 'use_recipe_system',
                               'use_bundles', 'is_active']);
 
@@ -147,7 +137,6 @@ class BranchController extends Controller
             'address'         => $validated['address']        ?? null,
             'phone'           => $validated['phone']          ?? null,
             'contact_person'  => $validated['contact_person'] ?? null,
-            'supplier_id'     => $validated['supplier_id']    ?? null,
             'business_type'   => $validated['business_type'],
             'use_table_ordering'  => $validated['use_table_ordering']  ?? $branch->use_table_ordering,
             'use_variants'        => $validated['use_variants']        ?? $branch->use_variants,

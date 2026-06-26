@@ -168,6 +168,7 @@ interface PageProps {
     branches: Branch[];
     allProductsForSelect: SelectProduct[];
     isAdmin: boolean;
+    productModuleSettings: Record<string, boolean>;
     userBranchId: number | null;
     userRole: string;
     tab?: string;
@@ -1900,9 +1901,9 @@ function StockManagementTab({ stockRows, stockPagination, stockFilters, branches
 const TABS = [
     { key: 'products',   label: 'All Products', icon: Package },
     { key: 'categories', label: 'Categories',   icon: Tag },
-    { key: 'variants',   label: 'Variants',     icon: Layers },
+    { key: 'variants',   label: 'Variants',      icon: Layers },
     { key: 'bundles',    label: 'Bundles',       icon: GitMerge },
-    { key: 'recipes',    label: 'Recipes / BOM', icon: ChefHat },
+    { key: 'recipes',    label: 'Recipes / BOM', icon: ChefHat,  menuId: '10' },
     { key: 'stock',      label: 'Stock Mgmt',    icon: Boxes },
 ];
 
@@ -1914,11 +1915,20 @@ export default function ProductsIndex() {
         variantProducts, bundleProducts, recipeProducts,
         stockRows, stockPagination, stockFilters,
         categories, branches, allProductsForSelect,
-        isAdmin, flash, tab: initialTab,
+        isAdmin, productModuleSettings, flash, tab: initialTab,
     } = usePage<PageProps>().props;
 
-    const [activeTab, setActiveTab] = useState(initialTab ?? 'products');
+    const visibleTabs = TABS.filter(t => !t.menuId || productModuleSettings?.[t.menuId] !== false);
+    const initialVisibleTab = visibleTabs.some(t => t.key === initialTab) ? initialTab! : 'products';
+
+    const [activeTab, setActiveTab] = useState(initialVisibleTab);
     const [toast, setToast]         = useState<{ type: string; text: string } | null>(flash?.message ?? null);
+
+    useEffect(() => {
+        if (!visibleTabs.some(t => t.key === activeTab)) {
+            setActiveTab('products');
+        }
+    }, [activeTab, visibleTabs]);
 
     const tabCount = (key: string) => {
         if (key === 'products')   return stats.total_products;
@@ -1949,7 +1959,7 @@ export default function ProductsIndex() {
 
                 {/* Tabs */}
                 <div className="flex gap-0 border-b border-border overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-                    {TABS.map(t => {
+                    {visibleTabs.map(t => {
                         const count = tabCount(t.key);
                         const Icon  = t.icon;
                         return (

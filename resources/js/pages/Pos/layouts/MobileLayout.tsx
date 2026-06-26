@@ -1,20 +1,23 @@
 import { useState } from 'react';
-import { ShoppingCart, X, ChevronDown, Package, Zap } from 'lucide-react';
+import { ShoppingCart, X, ChevronDown, Package, Zap, QrCode } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtMoney } from '../ReceiptTemplate';
 import type { Product, CartItem } from '../posTypes';
 
-export default function MobileLayout({ filtered, cart, currency, onProductClick, onCharge, subtotal, itemCount, onClear, onUpdateQty, onRemove }: {
+export default function MobileLayout({ filtered, cart, currency, onProductClick, onCharge, onQueue, subtotal, itemCount, onClear, onUpdateQty, onRemove, orderOnly = false, canCharge = true }: {
     filtered: Product[];
     cart: CartItem[];
     currency: string;
     onProductClick: (p: Product) => void;
     onCharge: () => void;
+    onQueue: () => void;
     subtotal: number;
     itemCount: number;
     onClear: () => void;
     onUpdateQty: (key: string, delta: number) => void;
     onRemove: (key: string) => void;
+    orderOnly?: boolean;
+    canCharge?: boolean;
 }) {
     const [cartOpen, setCartOpen] = useState(false);
 
@@ -127,9 +130,10 @@ export default function MobileLayout({ filtered, cart, currency, onProductClick,
                         </span>
                         {itemCount > 0 && <ChevronDown className={cn("h-4 w-4 shrink-0 transition-transform", cartOpen && "rotate-180")} />}
                     </button>
-                    <button onClick={onCharge} disabled={itemCount === 0}
+                    <button onClick={orderOnly ? onQueue : onCharge} disabled={itemCount === 0 || (!orderOnly && !canCharge)}
                         className="h-12 px-6 rounded-2xl bg-primary text-primary-foreground font-bold text-sm flex items-center gap-1.5 disabled:opacity-40 active:scale-95 transition-all">
-                        <Zap className="h-4 w-4" />Pay
+                        {orderOnly ? <QrCode className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
+                        {orderOnly ? "PRINT QR" : "Checkout"}
                     </button>
                 </div>
             </div>

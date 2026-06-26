@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * A Branch is a physical store/location owned by a Supplier.
+     * A Branch is a physical store/location.
      * All operational data (stock, sales, cash, expenses, etc.)
      * is scoped to a branch — NOT directly to a supplier.
      *
@@ -24,7 +24,7 @@ return new class extends Migration
     {
         Schema::create('branches', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('supplier_id')->constrained('suppliers')->cascadeOnDelete();
+            $table->foreignId('supplier_id')->nullable()->index();
             $table->string('name');
             $table->string('code', 20)->nullable()->unique();
             $table->string('address')->nullable();
@@ -42,7 +42,6 @@ return new class extends Migration
 
             $table->timestamps();
 
-            $table->index('supplier_id');
             $table->index('business_type');
         });
     }

@@ -7,10 +7,41 @@
 
         <title inertia>{{ config('app.name', 'FND') }}</title>
 
+        @php
+            $appIconBranchId = auth()->user()?->branch_id;
+            $branchAppIcon = $appIconBranchId
+                ? \App\Models\SystemSetting::where('branch_id', $appIconBranchId)
+                    ->where('key', 'general.app_icon')
+                    ->first(['value', 'updated_at'])
+                : null;
+            $globalAppIcon = \App\Models\SystemSetting::whereNull('branch_id')
+                ->where('key', 'general.app_icon')
+                ->first(['value', 'updated_at']);
+            $appIcon = $branchAppIcon && (string) ($branchAppIcon->value ?? '') !== ''
+                ? $branchAppIcon
+                : $globalAppIcon;
+            $appIconRouteBranchId = $appIcon === $branchAppIcon ? $appIconBranchId : null;
+            $appIconPath = ltrim(str_replace('\\', '/', (string) ($appIcon?->value ?? '')), '/');
+            $appIconVersion = null;
+            if ($appIconPath !== '' && \Illuminate\Support\Facades\Storage::disk('public')->exists($appIconPath)) {
+                $appIconVersion = implode('-', array_filter([
+                    $appIcon?->updated_at?->timestamp,
+                    \Illuminate\Support\Facades\Storage::disk('public')->lastModified($appIconPath),
+                    sprintf('%u', crc32($appIconPath)),
+                ]));
+            }
+            $appIconRouteParams = array_filter([
+                'branchId' => $appIconRouteBranchId,
+                'v' => $appIconVersion,
+            ], fn ($value) => $value !== null && $value !== '');
+            $appIconUrl = (string) ($appIcon?->value ?? '') !== ''
+                ? route('brand.icon', $appIconRouteParams)
+                : asset('uploads/ease-icon.png');
+        @endphp
+
         <!-- Icons -->
-        <link rel="icon" href="{{ asset('uploads/ease-icon.png') }}" sizes="any">
-        <link rel="icon" href="{{ asset('uploads/ease-icon.png') }}" type="image/svg+xml">
-        <link rel="apple-touch-icon" href="{{ asset('uploads/ease-icon.png') }}">
+        <link rel="icon" href="{{ $appIconUrl }}" sizes="any">
+        <link rel="apple-touch-icon" href="{{ $appIconUrl }}">
 
         <!-- Preconnect to Bunny Fonts (faster loading) -->
         <link rel="preconnect" href="https://fonts.bunny.net" crossorigin>

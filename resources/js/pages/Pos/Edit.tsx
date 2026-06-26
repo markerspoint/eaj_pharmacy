@@ -13,14 +13,14 @@ import {
 import { Button } from "@/components/ui/button";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface Variant { id: number; name: string; extra_price: number; is_available: boolean; }
+interface Variant { id: number; name: string; extra_price: number; price?: number | null; stock?: number; is_available: boolean; }
 interface Product {
     id: number; name: string; product_img: string | null;
-    price: number; stock: number;
+    price: number; base_stock?: number; stock: number;
     category: { id: number; name: string } | null;
     variants: Variant[]; has_variants: boolean;
 }
-interface SaleItem { id: number; product_id: number; product_name: string; variant_name: string | null; quantity: number; price: number; total: number; }
+interface SaleItem { id: number; product_id: number; product_variant_id: number | null; product_name: string; variant_name: string | null; quantity: number; price: number; total: number; }
 interface Sale {
     id: number; receipt_number: string; status: string;
     payment_method: string; total: number; customer_name: string | null;
@@ -50,14 +50,18 @@ export default function PosEdit() {
 
     // Initialise cart from existing sale items
     const initialCart: CartItem[] = sale.items.map(i => ({
-        key:        `${i.product_id}-${i.variant_name ?? "base"}`,
+        key:        `${i.product_id}-${i.product_variant_id ?? "base"}`,
         product_id: i.product_id,
-        variant_id: null,
+        variant_id: i.product_variant_id,
         name:       i.product_name,
         variant_name: i.variant_name,
         price:      i.price,
         qty:        i.quantity,
-        stock:      (products.find(p => p.id === i.product_id)?.stock ?? i.quantity) + i.quantity,
+        stock:      ((() => {
+            const product = products.find(p => p.id === i.product_id);
+            const variant = i.product_variant_id ? product?.variants.find(v => v.id === i.product_variant_id) : null;
+            return variant ? (variant.stock ?? i.quantity) : (product?.base_stock ?? product?.stock ?? i.quantity);
+        })()) + i.quantity,
     }));
 
     const [cart,     setCart]     = useState<CartItem[]>(initialCart);
@@ -75,16 +79,19 @@ export default function PosEdit() {
     const itemCount = useMemo(() => cart.reduce((s, i) => s + i.qty, 0), [cart]);
 
     const addItem = useCallback((product: Product, variantId: number | null = null, variantName: string | null = null) => {
-        const extra = variantId ? (product.variants.find(v => v.id === variantId)?.extra_price ?? 0) : 0;
-        const price = product.price + extra;
+        const variant = variantId ? product.variants.find(v => v.id === variantId) : null;
+        const extra = variant?.extra_price ?? 0;
+        const price = variant?.price ?? product.price + extra;
         const key   = `${product.id}-${variantId ?? "base"}`;
+        const stock = variant ? (variant.stock ?? 0) : (product.base_stock ?? product.stock);
+        if (stock <= 0) return;
         setCart(prev => {
             const ex = prev.find(i => i.key === key);
             if (ex) {
                 if (ex.qty >= ex.stock) return prev;
                 return prev.map(i => i.key === key ? { ...i, qty: i.qty + 1 } : i);
             }
-            return [...prev, { key, product_id: product.id, variant_id: variantId, name: product.name, variant_name: variantName, price, qty: 1, stock: product.stock }];
+            return [...prev, { key, product_id: product.id, variant_id: variantId, name: product.name, variant_name: variantName, price, qty: 1, stock }];
         });
     }, []);
 
@@ -178,12 +185,13 @@ export default function PosEdit() {
                                 <div className="space-y-1">
                                     {filtered.map(p => {
                                         const inCart = cart.find(i => i.product_id === p.id);
+                                        const baseStock = p.base_stock ?? p.stock;
                                         return (
                                             <button key={p.id} onClick={() => addItem(p)}
-                                                disabled={p.stock <= 0}
+                                                disabled={baseStock <= 0}
                                                 className={cn(
                                                     "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left transition-all",
-                                                    p.stock <= 0
+                                                    baseStock <= 0
                                                         ? "opacity-40 cursor-not-allowed border-border"
                                                         : inCart
                                                             ? "border-primary/50 bg-primary/5"
@@ -200,8 +208,8 @@ export default function PosEdit() {
                                                     <p className="text-xs font-bold text-primary tabular-nums">{fmtMoney(p.price, currency)}</p>
                                                 </div>
                                                 <div className="text-right shrink-0">
-                                                    <p className={cn("text-xs font-medium", p.stock <= 5 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>
-                                                        {p.stock} left
+                                                    <p className={cn("text-xs font-medium", baseStock <= 5 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>
+                                                        {baseStock} left
                                                     </p>
                                                     {inCart && (
                                                         <p className="text-[10px] text-primary font-bold">×{inCart.qty} in cart</p>

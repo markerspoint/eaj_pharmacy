@@ -69,6 +69,10 @@ class CashSessionController extends Controller
             return back()->withErrors(['error' => 'No branch assigned to your account.']);
         }
 
+        if (! $user->canCollectPosPayments()) {
+            return back()->withErrors(['error' => 'Order takers cannot open or use a cash drawer.']);
+        }
+
         // One open session per user at a time (multiple stations allowed per branch)
         if (CashSession::where('branch_id', $branchId)->where('user_id', $user->id)->open()->exists()) {
             return back()->withErrors(['error' => 'You already have an open session. Close it first before opening a new one.']);
@@ -112,6 +116,10 @@ class CashSessionController extends Controller
     public function close(Request $request, CashSession $session): RedirectResponse
     {
         $user = Auth::user();
+
+        if (! $user->canCollectPosPayments()) {
+            return back()->withErrors(['error' => 'Order takers cannot close cash drawers.']);
+        }
 
         if ($session->branch_id !== $user->branch_id && ! $user->isAdmin()) {
             abort(403, 'Unauthorized.');

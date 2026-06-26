@@ -27,6 +27,8 @@ export interface ReceiptData {
     notes: string | null;
     created_at: string;
     cashier: string;
+    order_created_by?: string | null;
+    payment_received_by?: string | null;
     items: ReceiptSaleItem[];
     branch_name?: string;
     branch_code?: string;
@@ -138,7 +140,8 @@ export default function ReceiptTemplate({ sale, currency = "₱", showActions = 
         lines.push("================================");
         lines.push(fmtDate(sale.created_at, "MMM d, yyyy  h:mm a"));
         lines.push(`Receipt: ${sale.receipt_number}`);
-        lines.push(`Cashier: ${sale.cashier}`);
+        lines.push(`Created by: ${sale.order_created_by ?? sale.cashier}`);
+        lines.push(`Payment by: ${sale.payment_received_by ?? sale.cashier}`);
         if (sale.customer_name) lines.push(`Customer: ${sale.customer_name}`);
         if (isDineIn)           lines.push(`Table: ${sale.table_label}`);
         lines.push("--------------------------------");
@@ -198,8 +201,12 @@ export default function ReceiptTemplate({ sale, currency = "₱", showActions = 
                         <span className="font-semibold text-foreground font-mono">{sale.receipt_number}</span>
                     </div>
                     <div className="flex justify-between text-[11px]">
-                        <span className="text-muted-foreground">Cashier</span>
-                        <span className="text-foreground">{sale.cashier}</span>
+                        <span className="text-muted-foreground">Created by</span>
+                        <span className="text-foreground">{sale.order_created_by ?? sale.cashier}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                        <span className="text-muted-foreground">Payment by</span>
+                        <span className="text-foreground">{sale.payment_received_by ?? sale.cashier}</span>
                     </div>
                     {sale.customer_name && (
                         <div className="flex justify-between text-[11px]">

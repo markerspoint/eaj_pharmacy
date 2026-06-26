@@ -15,6 +15,8 @@ class Sale extends Model
     protected $fillable = [
         'receipt_number',
         'user_id',
+        'order_created_by',
+        'payment_received_by',
         'branch_id',
         'cash_session_id',
         'table_order_id',   // null for walk-up / takeout, set for dine-in
@@ -45,6 +47,8 @@ class Sale extends Model
     // ── Relationships ──────────────────────────────────────────────
 
     public function user(): BelongsTo             { return $this->belongsTo(User::class); }
+    public function orderCreator(): BelongsTo     { return $this->belongsTo(User::class, 'order_created_by'); }
+    public function paymentReceiver(): BelongsTo  { return $this->belongsTo(User::class, 'payment_received_by'); }
     public function branch(): BelongsTo           { return $this->belongsTo(Branch::class); }
     public function cashSession(): BelongsTo      { return $this->belongsTo(CashSession::class); }
     public function tableOrder(): BelongsTo       { return $this->belongsTo(TableOrder::class); }

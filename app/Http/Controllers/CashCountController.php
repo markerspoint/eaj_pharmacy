@@ -109,6 +109,10 @@ class CashCountController extends Controller
     {
         $user = Auth::user();
 
+        if (! $user->canCollectPosPayments()) {
+            return back()->withErrors(['error' => 'Order takers cannot perform cash counts or close drawers.']);
+        }
+
         $validated = $request->validate([
             'cash_session_id' => ['required', 'exists:cash_sessions,id'],
             'count_type'      => ['required', 'in:closing,midshift'],

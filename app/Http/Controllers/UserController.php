@@ -34,7 +34,7 @@ class UserController extends Controller
         $isSuper = $actor->isSuperAdmin();
 
         $users = User::with('branch:id,name,code,business_type')
-            ->when($this->scopedBranchId(), fn($q, $id) => $q->where('branch_id', $id))
+            ->when(! $isSuper, fn ($q) => $q->where('role', '!=', User::ROLE_SUPER_ADMIN))
             ->latest('created_at')
             ->get()
             ->map(fn (User $u) => [
@@ -45,6 +45,8 @@ class UserController extends Controller
                 'username'         => $u->username,
                 'role'             => $u->role,
                 'role_label'       => $u->role_label,
+                'cashier_type'     => $u->cashier_type ?? User::CASHIER_TYPE_COUNTER_CASHIER,
+                'cashier_type_label' => $u->cashier_type_label,
                 'branch_id'        => $u->branch_id,
                 'branch'           => $u->branch ? [
                     'id'            => $u->branch->id,
@@ -116,6 +118,7 @@ class UserController extends Controller
             'access'     => ['nullable', 'array'],
             'access.*'   => ['string', 'in:' . implode(',', MenuHelper::ids())],
             'pos_layout' => ['nullable', 'string', 'in:' . implode(',', User::POS_LAYOUTS)],
+            'cashier_type' => ['nullable', 'string', 'in:' . implode(',', array_keys(User::cashierTypes()))],
         ], [
             'username.unique'    => 'This username is already taken.',
             'password.min'       => 'Password must be at least 6 characters.',
@@ -132,6 +135,9 @@ class UserController extends Controller
             'username'   => trim($validated['username']),
             'password'   => Hash::make($validated['password']),
             'role'       => $validated['role'],
+            'cashier_type' => $validated['role'] === User::ROLE_CASHIER
+                ? ($validated['cashier_type'] ?? User::CASHIER_TYPE_COUNTER_CASHIER)
+                : User::CASHIER_TYPE_COUNTER_CASHIER,
             'branch_id'  => $validated['branch_id'],
             'access'     => $access,
             'pos_layout' => $validated['pos_layout'] ?? 'grid',
@@ -143,7 +149,7 @@ class UserController extends Controller
             'subject_type' => User::class,
             'subject_id'   => $user->id,
             'properties'   => [
-                'new_data'   => $user->only(['fname', 'lname', 'username', 'role', 'branch_id', 'access']),
+                'new_data'   => $user->only(['fname', 'lname', 'username', 'role', 'cashier_type', 'branch_id', 'access']),
                 'ip'         => $request->ip(),
                 'user_agent' => $request->userAgent(),
             ],
@@ -182,6 +188,7 @@ class UserController extends Controller
             'access'     => ['nullable', 'array'],
             'access.*'   => ['string', 'in:' . implode(',', MenuHelper::ids())],
             'pos_layout' => ['nullable', 'string', 'in:' . implode(',', User::POS_LAYOUTS)],
+            'cashier_type' => ['nullable', 'string', 'in:' . implode(',', array_keys(User::cashierTypes()))],
         ], [
             'username.unique'    => 'This username is already taken.',
             'password.min'       => 'Password must be at least 6 characters.',
@@ -195,6 +202,9 @@ class UserController extends Controller
             'lname'      => trim($validated['lname']),
             'username'   => trim($validated['username']),
             'role'       => $validated['role'],
+            'cashier_type' => $validated['role'] === User::ROLE_CASHIER
+                ? ($validated['cashier_type'] ?? $user->cashier_type ?? User::CASHIER_TYPE_COUNTER_CASHIER)
+                : User::CASHIER_TYPE_COUNTER_CASHIER,
             'branch_id'  => $validated['branch_id'],
             'access'     => $access,
             'pos_layout' => $validated['pos_layout'] ?? $user->pos_layout ?? 'grid',
@@ -204,9 +214,9 @@ class UserController extends Controller
             $updateData['password'] = Hash::make($validated['password']);
         }
 
-        $oldData   = $user->only(['fname', 'lname', 'username', 'role', 'branch_id', 'access', 'pos_layout']);
-        $scalarOld = array_intersect_key($oldData, array_flip(['fname', 'lname', 'username', 'role', 'branch_id', 'pos_layout']));
-        $scalarNew = array_intersect_key($updateData, array_flip(['fname', 'lname', 'username', 'role', 'branch_id', 'pos_layout']));
+        $oldData   = $user->only(['fname', 'lname', 'username', 'role', 'cashier_type', 'branch_id', 'access', 'pos_layout']);
+        $scalarOld = array_intersect_key($oldData, array_flip(['fname', 'lname', 'username', 'role', 'cashier_type', 'branch_id', 'pos_layout']));
+        $scalarNew = array_intersect_key($updateData, array_flip(['fname', 'lname', 'username', 'role', 'cashier_type', 'branch_id', 'pos_layout']));
         $changed   = array_keys(array_diff_assoc($scalarNew, $scalarOld));
 
         $accessOld = $oldData['access'] ?? []; sort($accessOld);

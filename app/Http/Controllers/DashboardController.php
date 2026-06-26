@@ -27,8 +27,7 @@ class DashboardController extends Controller
         $user = Auth::user();
 
         if ($user->isSuperAdmin() || $user->isAdministrator()) {
-            $branches = Branch::with('supplier:id,name')
-                ->orderBy('name')
+            $branches = Branch::orderBy('name')
                 ->get()
                 ->map(fn(Branch $b) => [
                     'id'            => $b->id,
