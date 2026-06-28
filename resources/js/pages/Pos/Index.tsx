@@ -13,6 +13,9 @@ import {
     RefreshCw, Zap, User, ChevronDown, Wallet, CalendarClock, Unlock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+    Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import type { Product, CartItem, Category, TableOrder, DiningTable, ActivePromo, QueuedOrder } from "./posTypes";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1098,6 +1101,14 @@ function PendingPaymentModal({ orders, currency, activeOrderId, onSelect, onDele
     onDelete: (order: QueuedOrder) => void;
     onClose: () => void;
 }) {
+    const [orderToRemove, setOrderToRemove] = useState<QueuedOrder | null>(null);
+
+    const confirmRemove = () => {
+        if (!orderToRemove) return;
+        onDelete(orderToRemove);
+        setOrderToRemove(null);
+    };
+
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/45 backdrop-blur-sm">
         <div className="bg-card border border-border rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg shadow-2xl flex flex-col max-h-[86vh]">
@@ -1136,7 +1147,7 @@ function PendingPaymentModal({ orders, currency, activeOrderId, onSelect, onDele
                                 >
                                     <button
                                         type="button"
-                                        onClick={() => onDelete(order)}
+                                        onClick={() => setOrderToRemove(order)}
                                         className="absolute -right-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full border border-border bg-card text-muted-foreground shadow-sm hover:border-destructive/40 hover:bg-destructive hover:text-destructive-foreground"
                                         title="Remove pending order"
                                     >
@@ -1162,6 +1173,41 @@ function PendingPaymentModal({ orders, currency, activeOrderId, onSelect, onDele
                 )}
             </div>
         </div>
+        <Dialog open={!!orderToRemove} onOpenChange={(open) => !open && setOrderToRemove(null)}>
+            <DialogContent className="sm:max-w-md" showCloseButton={false}>
+                <DialogHeader>
+                    <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+                        <AlertTriangle className="h-5 w-5" />
+                    </div>
+                    <DialogTitle>Remove Pending Order</DialogTitle>
+                    <DialogDescription>
+                        This will remove the unpaid ticket from the pending payment list.
+                    </DialogDescription>
+                </DialogHeader>
+
+                {orderToRemove && (
+                    <div className="rounded-lg border border-border bg-muted/30 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                            <span className="font-mono text-sm font-black text-foreground">
+                                {orderToRemove.ticket_number}
+                            </span>
+                            <span className="text-sm font-black tabular-nums text-primary">
+                                {fmtMoney(orderToRemove.total, currency)}
+                            </span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                            <span className="truncate">{orderToRemove.customer_name || orderToRemove.listed_by || "Walk-in customer"}</span>
+                            <span>{orderToRemove.items.length} line{orderToRemove.items.length !== 1 ? "s" : ""}</span>
+                        </div>
+                    </div>
+                )}
+
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => setOrderToRemove(null)}>Cancel</Button>
+                    <Button variant="destructive" onClick={confirmRemove}>Remove Order</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
         </div>
     );
 }
@@ -1335,8 +1381,6 @@ export default function PosIndex() {
     }, [loadQueuedOrder]);
 
     const deletePendingOrder = useCallback((order: QueuedOrder) => {
-        if (! window.confirm(`Remove pending order ${order.ticket_number}?`)) return;
-
         router.delete(`/pos/queued-orders/${order.id}`, {
             preserveScroll: true,
             onSuccess: () => {
