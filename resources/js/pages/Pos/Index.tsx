@@ -1403,14 +1403,16 @@ export default function PosIndex() {
     const handleQueue = () => {
         if (!cart.length) return;
         setLoading(true); setError(null);
-        router.post("/pos/queue", {
+        router.post(routes.pos.queue(), {
             items: cart.map(i => ({ id: i.product_id, qty: i.qty, variant_id: i.variant_id })),
         }, {
             preserveScroll: true,
             onSuccess: page => {
                 const flash = (page.props as any).flash ?? {};
                 if (!flash.queued_order) {
-                    setError(flash.errors?.error ?? "Unable to print QR ticket.");
+                    const pageErrors = (page.props as any).errors ?? {};
+                    const firstError = Object.values(pageErrors)[0] as string | undefined;
+                    setError(pageErrors.error ?? firstError ?? "Unable to print QR ticket.");
                     setLoading(false);
                     return;
                 }

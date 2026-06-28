@@ -219,6 +219,7 @@ class HandleInertiaRequests extends Middleware
                 'info'       => session('info'),
                 'message'    => session('message'),
                 'pos_result' => session('pos_result'),
+                'queued_order' => session('queued_order'),
             ],
 
             // ── Ziggy route helper ────────────────────────────────

@@ -41,7 +41,7 @@ function Providers({ children }: { children: React.ReactNode }) {
   );
 }
 
-const appName = import.meta.env.VITE_APP_NAME || 'FND Admin';
+const appName = import.meta.env.VITE_APP_NAME || 'EAJ Pharmacy Management System';
 
 createInertiaApp({
   title: (title) => title || appName,

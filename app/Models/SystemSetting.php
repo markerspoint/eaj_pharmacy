@@ -163,7 +163,7 @@ class SystemSetting extends Model
 
             // ── General ───────────────────────────────────────────
             ['key' => 'general.ai_chat_enabled', 'value' => 'true',                 'type' => 'boolean', 'group' => 'general', 'label' => 'AI Business Assistant', 'description' => 'Show the floating AI chat assistant for Super Admin and Administrator accounts'],
-            ['key' => 'general.business_name',  'value' => 'My POS Business',       'type' => 'string',  'group' => 'general', 'label' => 'Business name'],
+            ['key' => 'general.business_name',  'value' => 'EAJ Pharmacy Management System', 'type' => 'string',  'group' => 'general', 'label' => 'Business name'],
             ['key' => 'general.address',         'value' => '',                      'type' => 'string',  'group' => 'general', 'label' => 'Address'],
             ['key' => 'general.phone',           'value' => '',                      'type' => 'string',  'group' => 'general', 'label' => 'Phone number'],
             ['key' => 'general.tin',             'value' => '',                      'type' => 'string',  'group' => 'general', 'label' => 'TIN'],
@@ -222,7 +222,7 @@ class SystemSetting extends Model
 
     public static function businessName(?int $branchId = null): string
     {
-        return (string) static::get('general.business_name', $branchId, 'My POS');
+        return (string) static::get('general.business_name', $branchId, 'EAJ Pharmacy Management System');
     }
 
     public static function currencySymbol(): string

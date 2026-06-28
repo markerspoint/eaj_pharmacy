@@ -68,11 +68,11 @@ Route::middleware('auth')->group(function () {
         Route::post('/queue', 'queueOrder')->name('queue');
         Route::get('/queued-orders/{token}', 'queuedOrder')->name('queued-orders.show');
         Route::delete('/queued-orders/{order}', 'cancelQueuedOrder')->name('queued-orders.cancel');
+        Route::get('/barcode/lookup', 'lookupBarcode')->name('barcode.lookup');
         Route::get('/{sale}/edit', 'edit')->name('edit');
         Route::put('/{sale}', 'update')->name('update');
         Route::post('/{sale}/void', 'void')->name('void');
         Route::get('/{sale}', 'show')->name('show');
-        Route::get('/barcode/lookup', 'lookupBarcode')->name('barcode.lookup');
     });
 
     // Sales History

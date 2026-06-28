@@ -30,6 +30,9 @@ export const routes = {
     pos: {
         index:         ()       => route('pos.index'),
         store:         ()       => route('pos.store'),
+        queue:         ()       => route('pos.queue'),
+        queuedOrder:   (token: Id) => route('pos.queued-orders.show', { token }),
+        cancelQueuedOrder: (id: Id) => route('pos.queued-orders.cancel', { order: id }),
         show:          (id: Id) => route('pos.show',          { sale: id }),
         edit:          (id: Id) => route('pos.edit',          { sale: id }),
         update:        (id: Id) => route('pos.update',        { sale: id }),
