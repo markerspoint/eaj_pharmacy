@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Table2, X, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fmtMoney } from '../ReceiptTemplate';
+import { fmtMoney } from '../components/ReceiptTemplate';
 import type { Product, CartItem, TableOrder, DiningTable } from '../posTypes';
 import TabletLayout from './TabletLayout';
 

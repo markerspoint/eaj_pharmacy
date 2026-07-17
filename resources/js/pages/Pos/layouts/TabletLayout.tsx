@@ -1,6 +1,6 @@
 import { Package, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fmtMoney } from '../ReceiptTemplate';
+import { fmtMoney } from '../components/ReceiptTemplate';
 import type { Product, CartItem } from '../posTypes';
 
 export default function TabletLayout({ filtered, cart, currency, onProductClick }: {

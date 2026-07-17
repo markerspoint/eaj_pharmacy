@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ShoppingCart, X, ChevronDown, Package, Zap, QrCode } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fmtMoney } from '../ReceiptTemplate';
+import { fmtMoney } from '../components/ReceiptTemplate';
 import type { Product, CartItem } from '../posTypes';
 
 export default function MobileLayout({ filtered, cart, currency, onProductClick, onCharge, onQueue, subtotal, itemCount, onClear, onUpdateQty, onRemove, orderOnly = false, canCharge = true }: {

@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { usePage, router, Link } from "@inertiajs/react";
 import AdminLayout from "@/layouts/AdminLayout";
-import { fmtMoney } from "./ReceiptTemplate";
+import { fmtMoney } from "./components/ReceiptTemplate";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
 import {

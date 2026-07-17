@@ -246,6 +246,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     const logoUrl = props.app?.logo_url ?? "/img/logo/eaj-primary.png";
     const iconUrl = props.app?.icon_url ?? "/img/logo/eajicon.png";
     const logoKey = `${logoUrl}|${props.app?.logo_version ?? ""}`;
+    const iconKey = `${iconUrl}|${props.app?.icon_version ?? ""}`;
     const currentPath = usePage().url.split("?")[0].replace(/\/$/, "") || "/";
     const isPosRoute = currentPath === "/pos" || currentPath.startsWith("/pos/");
     const [sidebarOpen, setSidebarOpen] = useState(!isPosRoute);
@@ -303,13 +304,13 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     </Head>
 
                     {/* Header / Logo */}
-                    <SidebarHeader className="border-b border-border">
+                    <SidebarHeader className="h-16 border-b border-border justify-center p-0 px-3">
                         <SidebarMenu>
                             <SidebarMenuItem>
                                 <SidebarMenuButton size="lg" asChild>
                                     <Link href={has(MENU.DASHBOARD) ? routes.dashboard() : routes.pos.index()}>
-                                        <div className="flex h-9 w-16 shrink-0 items-center justify-center rounded-md bg-white p-1 ring-1 ring-border group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:p-0.5">
-                                            <img key={logoKey} src={logoUrl} alt="Logo" className="max-h-full max-w-full object-contain" />
+                                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md group-data-[collapsible=icon]:size-8">
+                                            <img key={iconKey} src={iconUrl} alt="Logo" className="max-h-full max-w-full object-contain" />
                                         </div>
                                         <div className="grid flex-1 text-left text-sm leading-tight">
                                             <span className="truncate font-semibold">POS System</span>
@@ -552,7 +553,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 {/* ── MAIN CONTENT ────────────────────────────────────── */}
                 <div className="flex flex-1 flex-col min-w-0">
                     {/* Top bar */}
-                    <header className="sticky top-0 z-40 h-16 bg-background border-b border-border flex items-center justify-between px-6 shadow-sm">
+                    <header className="sticky top-0 z-40 h-16 bg-background border-b border-border flex items-center justify-between px-6">
                         <div className="flex items-center gap-3">
                             <SidebarTrigger />
                             <h1 className="text-base font-semibold">{props.title ?? "Dashboard"}</h1>

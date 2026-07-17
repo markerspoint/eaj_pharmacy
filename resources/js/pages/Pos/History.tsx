@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { usePage, router, Link } from "@inertiajs/react";
 import AdminLayout from "@/layouts/AdminLayout";
-import ReceiptTemplate, { fmtMoney, ReceiptData } from "./ReceiptTemplate";
+import ReceiptTemplate, { fmtMoney, type ReceiptData } from "./components/ReceiptTemplate";
+import { MethodChip } from "./components/MethodChip";
+import { ReceiptDrawer } from "./components/ReceiptDrawer";
 import { routes } from "@/routes";
 import { cn } from "@/lib/utils";
 import {
@@ -55,79 +57,7 @@ const presets = [
 const TABLE_TYPES = ["restaurant", "bar", "mixed"];
 const SALON_TYPES = ["salon"];
 
-// ─── Method chip ──────────────────────────────────────────────────────────────
-function MethodChip({ method }: { method: string }) {
-    const map: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-        cash:   { label: "Cash",   color: "bg-green-50  text-green-700  dark:bg-green-900/20  dark:text-green-400",  icon: Banknote   },
-        gcash:  { label: "GCash",  color: "bg-blue-50   text-blue-700   dark:bg-blue-900/20   dark:text-blue-400",   icon: Smartphone },
-        card:   { label: "Card",   color: "bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400", icon: CreditCard },
-        others: { label: "Others", color: "bg-muted     text-muted-foreground",                                       icon: Tag        },
-    };
-    const m = map[method] ?? map.others;
-    const Icon = m.icon;
-    return (
-        <span className={cn("flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full w-fit", m.color)}>
-            <Icon className="h-2.5 w-2.5" />{m.label}
-        </span>
-    );
-}
 
-// ─── Receipt drawer ───────────────────────────────────────────────────────────
-function ReceiptDrawer({ sale, currency, businessType, onClose }: {
-    sale: SaleRow; currency: string; businessType?: string; onClose: () => void;
-}) {
-    // Augment with business_type for the receipt template
-    const saleWithMeta = { ...sale, business_type: businessType };
-    return (
-        <div className="fixed inset-0 z-50 flex justify-end">
-            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-            <div className="relative w-full sm:w-96 bg-card border-l border-border flex flex-col shadow-2xl">
-                {/* Header */}
-                <div className="flex items-start justify-between px-5 py-4 border-b border-border shrink-0">
-                    <div>
-                        <p className="font-bold text-foreground font-mono text-sm">{sale.receipt_number}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                            {fmtDate(sale.created_at, "MMMM d, yyyy · h:mm a")}
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <Link href={routes.pos.show(sale.id)}>
-                            <button className="h-7 w-7 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title="View full page">
-                                <Eye className="h-3.5 w-3.5" />
-                            </button>
-                        </Link>
-                        <button onClick={onClose}
-                            className="h-7 w-7 flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-                            <X className="h-3.5 w-3.5" />
-                        </button>
-                    </div>
-                </div>
-
-                {/* Status + chips */}
-                <div className="px-5 py-3 flex items-center gap-2 flex-wrap border-b border-border shrink-0">
-                    <span className={cn("badge text-[10px] font-bold capitalize",
-                        sale.status === "completed" ? "badge-completed" : "badge-voided")}>
-                        {sale.status}
-                    </span>
-                    <MethodChip method={sale.payment_method} />
-                    {sale.customer_name && (
-                        <span className="text-xs text-muted-foreground">👤 {sale.customer_name}</span>
-                    )}
-                    {sale.table_label && (
-                        <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 font-medium">
-                            <Table2 className="h-3 w-3" />{sale.table_label}
-                        </span>
-                    )}
-                </div>
-
-                {/* Receipt */}
-                <div className="flex-1 overflow-y-auto p-5">
-                    <ReceiptTemplate sale={saleWithMeta} currency={currency} showActions={true} />
-                </div>
-            </div>
-        </div>
-    );
-}
 
 // ─── History page ─────────────────────────────────────────────────────────────
 export default function PosHistory() {

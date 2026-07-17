@@ -106,3 +106,6 @@ export interface ActivePromo {
     category_ids: number[];
     expires_at: string | null;
 }
+
+export type PayMethod = "cash" | "gcash" | "card" | "others" | "installment";
+

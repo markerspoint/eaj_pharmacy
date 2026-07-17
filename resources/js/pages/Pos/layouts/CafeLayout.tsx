@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { fmtMoney } from '../ReceiptTemplate';
+import { fmtMoney } from '../components/ReceiptTemplate';
 import type { Product, CartItem, Category } from '../posTypes';
 
 export default function CafeLayout({ filtered, allProducts, categories, activeCat, onCatChange, cart, currency, onProductClick }: {

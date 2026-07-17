@@ -1,7 +1,7 @@
 import { Trash2, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { fmtMoney } from '../ReceiptTemplate';
+import { fmtMoney } from '../components/ReceiptTemplate';
 import type { Product, CartItem } from '../posTypes';
 
 export default function KioskLayout({ filtered, cart, currency, onProductClick, onCharge, subtotal, itemCount, onClear }: {
