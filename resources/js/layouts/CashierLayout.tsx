@@ -72,8 +72,8 @@ const navAccentClass: Record<typeof NAV[number]["accent"], { active: string; ico
 export default function CashierLayout({ children }: { children: ReactNode }) {
     const { props } = usePage<any>();
     const { theme, setTheme } = useTheme();
-    const logoUrl = props.app?.logo_url ?? "/uploads/ease-logo.png";
-    const iconUrl = props.app?.icon_url ?? "/uploads/ease-icon.png";
+    const logoUrl = props.app?.logo_url ?? "/img/logo/eaj-primary.png";
+    const iconUrl = props.app?.icon_url ?? "/img/logo/eajicon.png";
     const logoKey = `${logoUrl}|${props.app?.logo_version ?? ""}`;
     const currentPath = usePage().url.split("?")[0].replace(/\/$/, "");
 

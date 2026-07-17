@@ -116,7 +116,7 @@ class HandleInertiaRequests extends Middleware
                         'branchId' => $branchId,
                         'v'        => $iconVersion,
                     ]))
-                    : asset('uploads/ease-icon.png'),
+                    : asset('img/logo/eajicon.png'),
                 'icon_version'   => $iconVersion,
             ],
 

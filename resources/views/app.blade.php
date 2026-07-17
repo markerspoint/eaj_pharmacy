@@ -36,7 +36,7 @@
             ], fn ($value) => $value !== null && $value !== '');
             $appIconUrl = (string) ($appIcon?->value ?? '') !== ''
                 ? route('brand.icon', $appIconRouteParams)
-                : asset('uploads/ease-icon.png');
+                : asset('img/logo/eajicon.png');
         @endphp
 
         <!-- Icons -->

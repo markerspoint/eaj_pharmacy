@@ -119,7 +119,7 @@ function ImageUpload({ settingKey, currentValue, branchId }: { settingKey: strin
     const brandRoute = branchId
         ? route(isIcon ? "brand.icon" : "brand.logo", { branchId })
         : route(isIcon ? "brand.icon" : "brand.logo");
-    const fallbackUrl = isIcon ? "/uploads/ease-icon.png" : "/uploads/ease-logo.png";
+    const fallbackUrl = isIcon ? "/img/logo/eajicon.png" : "/img/logo/eaj-primary.png";
     const imageUrl = preview ?? (currentValue ? `${brandRoute}?v=${cacheBust}` : fallbackUrl);
 
     const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
