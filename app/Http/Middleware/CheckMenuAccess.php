@@ -19,8 +19,10 @@ class CheckMenuAccess
         }
 
         if (!$user->hasAccess($menuId)) {
-            $home = $user->hasAccess(2) ? route('pos.index') : route('login');
-            return redirect()->to($home)->with('error', 'You do not have access to that page.');
+            if ($user->hasAccess(2)) {
+                return redirect()->route('pos.index')->with('error', 'You do not have access to that page.');
+            }
+            abort(403, 'You do not have access to this page.');
         }
 
         return $next($request);

@@ -1,0 +1,13 @@
+diff --git a/dist/index.js b/dist/index.js
+index 013d87a5960187952a7bf3d5047521d9297f9051..e8c744d0f35d2ad8a9f78f5c29bc9d5665db8b8a 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -109,7 +109,7 @@ function resolveLaravelPlugin(pluginConfig) {
+       const appUrl = loadEnv(resolvedConfig.mode, envDir, "APP_URL").APP_URL ?? "undefined";
+       server.httpServer?.once("listening", () => {
+         const address = server.httpServer?.address();
+-        const isAddressInfo = (x) => typeof x === "object";
++        const isAddressInfo = (x) => x !== null && typeof x === "object";
+         if (isAddressInfo(address)) {
+           viteDevServerUrl = userConfig.server?.origin ? userConfig.server.origin : resolveDevServerUrl(address, server.config, userConfig);
+           const hotFileParentDirectory = path.dirname(pluginConfig.hotFile);
